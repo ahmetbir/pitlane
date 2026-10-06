@@ -18,7 +18,7 @@ holds Pitlane's.
 ```sh
 go vet ./... && go test -race -count=1 ./...
 (cd client && npm run check && npm test && npm run build)
-bash scripts/smoke.sh          # once cmd/pitlane exists
+bash scripts/smoke.sh          # after the client build: 4 bot players, gaps and disconnects
 ```
 
 ## Invariants
@@ -38,4 +38,9 @@ bash scripts/smoke.sh          # once cmd/pitlane exists
 - **Deploy.** README [Deployment](README.md#deployment); `scripts/deploy.sh` (blue/green, `pitlane-blue/green`,
   `$pitlane_upstream`) reads the gitignored `deploy/deploy.env`; CI deploys `main` via
   `deploy/ci-deploy.sh` after approval. Use `deploy/deploy.env.example` placeholders in docs.
+- **Stats credit.** A pilot is credited from the takeover on (`race.Credit`): laps since, best
+  of the laps started since, a race only with a finish after one full lap of their own. A finish
+  is recorded at the flag, once per pilot and race. Best laps are keyed `kiyi-<handling>`.
+- **Known limitations** (accepted): stats of races ending on a draining color are dropped, and a
+  reconnect to a draining color's room gets "room gone" (README Deployment).
 - **Secrets** never enter git (`deploy/deploy.env`, `.env*`, keys).

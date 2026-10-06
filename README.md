@@ -7,7 +7,22 @@ responds to. Built on [roomkit](https://github.com/ahmetbir/roomkit): a Go serve
 authority (60 Hz simulation, 30 Hz snapshots); the TypeScript + Three.js client predicts your car
 and is embedded into the Go binary.
 
-Status: in development. Design: `docs/superpowers/specs/2026-10-07-pitlane-design.md`.
+Status: playable, ahead of its first public release. Design:
+`docs/superpowers/specs/2026-10-07-pitlane-design.md`.
+
+## Features
+
+- Quick race, create a room (handling, contact, laps, listed or private) or join by code; empty
+  places are bots, and a player who joins mid-race takes over the last-placed bot.
+- A dropped connection gets its own car back within 60 s, place, lap and timing kept.
+- Garage setup per driver; chase and cockpit cameras; keyboard or gamepad; engine, tyre and
+  contact audio; Turkish and English.
+- Lights, jump-start penalties, lap validity (track limits), marshal resets, a 45 s finish
+  window and results; a race nobody completes ends after laps × 4 minutes.
+- Pilot stats (races, wins, podiums, laps) and leaderboards for this week and all time: wins,
+  and best laps on Kıyı per handling (Arcade and Sim apart). A driver who takes over a bot is
+  credited only for what they drive.
+- A race left without key or pad input for 5 minutes sends the player home.
 
 ## Run
 
@@ -19,8 +34,9 @@ go run ./cmd/pitlane -addr 127.0.0.1:8095
 ## Test
 
 ```sh
-go vet ./... && go test -race ./...
-(cd client && npm run check && npm test)
+go vet ./... && go test -race -count=1 ./...
+(cd client && npm run check && npm test && npm run build)
+bash scripts/smoke.sh   # 4 bot players against a local server (needs the client build)
 ```
 
 ## Deployment
@@ -70,6 +86,16 @@ drains the old color with `SIGUSR1` (its players finish their rooms, the stats l
 at once). Deploy, rollback and `switch-upstream.sh` hold a `flock` on `$DEPLOY_DIR/deploy.lock`.
 Only the containers `pitlane-blue` and `pitlane-green` and the `pitlane:<version>` images are
 touched, by exact name. Set `DRAIN_WAIT=<seconds>` to wait for a still-draining idle color.
+
+### Known limitations
+
+- **Stats during a drain.** The draining color hands the stats lock to the new color at once,
+  so a race that ends on the draining color (a race running at the deploy, and any its players
+  start before they leave, up to `DRAIN_MAX`) records nothing; the `dropped` metric counts
+  them. Accepted, as in Dogfight.
+- **Reconnects during a drain.** A connection blip on the draining color gets the update close
+  (1012); the new color does not have that room, so the player sees "room gone" and starts
+  again from home.
 
 ### Deploy from CI (optional)
 
