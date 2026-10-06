@@ -13,7 +13,8 @@ import type { Results, ServerMsg } from "../net/protocol.ts";
 import { Session, socketURL } from "../net/session.ts";
 import { kiyi } from "../track/track.ts";
 import { fill, h } from "roomkit/ui/dom";
-import { errorCard, loading, unreachableCard, type Banner } from "./banner.ts";
+import { errorCard, loading, noWebGL, unreachableCard, type Banner } from "./banner.ts";
+import { openView } from "./canvas.ts";
 import { initialFlow, step, type FlowEvent } from "./flow.ts";
 import { garagePanel } from "./garage.ts";
 import { GridScreen } from "./grid.ts";
@@ -21,19 +22,25 @@ import type { Entry } from "./home.ts";
 import { Hud } from "./hud.ts";
 import { loadSettings, loadSetup, loadToken, storeToken } from "./prefs.ts";
 import { resultsView } from "./results.ts";
+import { focusFirst, Toast } from "./widgets.ts";
 
 export type PlayOpts = {
-  canvas: HTMLCanvasElement; ui: HTMLElement; banner: Banner; name: string; entry: Entry;
+  /** A fresh canvas for this race's renderer (main swaps the page's #game element). */
+  canvas: () => HTMLCanvasElement;
+  ui: HTMLElement; banner: Banner; name: string; entry: Entry;
   /** Back to the home page (after the session is torn down). */
   home(): void;
 };
 
 export function play(o: PlayOpts): void {
-  const { canvas, ui, banner } = o;
+  const { ui, banner } = o;
   const track = kiyi();
   const settings = loadSettings();
   const controls = browserControls();
-  const hud = new Hud(track.segs);
+  const leaveBtn = h("button", { type: "button", class: "btn small ghost hud-leave" }, t("grid.leave"));
+  leaveBtn.addEventListener("click", () => leave());
+  const hud = new Hud(track.segs, leaveBtn);
+  const toast = new Toast(); // over the garage overlay
   const audio = new RaceAudio(settings.volume);
   let throttle = 0;
   const grid = new GridScreen({
@@ -45,8 +52,6 @@ export function play(o: PlayOpts): void {
     },
     leave: () => leave(),
   });
-  const leaveBtn = h("button", { type: "button", class: "btn small ghost hud-leave", title: t("grid.leave") }, t("grid.leave"));
-  leaveBtn.addEventListener("click", () => leave());
 
   let flow = initialFlow();
   let garageOpen = false;
@@ -65,23 +70,30 @@ export function play(o: PlayOpts): void {
         break;
       case "grid":
         if (garageOpen) {
-          fill(ui, h("div", { class: "screen overlay" }, h("section", { class: "panel" }, h("h2", {}, t("garage.title")), garagePanel(() => {
-            garageOpen = false;
-            render(true);
-          }))));
+          fill(ui, h("div", { class: "screen overlay" }, h("section", { class: "panel" }, h("h2", {}, t("garage.title")), garagePanel(closeGarage))), toast.el);
+          focusFirst(ui);
         } else if (force || !ui.contains(grid.el)) fill(ui, grid.el);
         break;
       case "race":
-        if (force || !ui.contains(hud.el)) fill(ui, hud.el, leaveBtn);
+        if (force || !ui.contains(hud.el)) fill(ui, hud.el);
         break;
       case "results":
-        fill(ui, resultsView(results?.rows ?? [], car), leaveBtn);
+        fill(ui, resultsView(results?.rows ?? [], car, leaveBtn));
         break;
       case "error":
         errorCard(ui, t("card.joinFail"), errorText(flow.error?.code, flow.error?.msg ?? ""));
         break;
     }
   };
+
+  function closeGarage(): void {
+    garageOpen = false;
+    render(true);
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && garageOpen && flow.view === "grid") closeGarage();
+  };
+  window.addEventListener("keydown", onKey);
 
   const advance = (e: FlowEvent) => {
     const before = flow.view;
@@ -104,7 +116,12 @@ export function play(o: PlayOpts): void {
         car = m.car;
         laps = m.laps;
         if (!view) {
-          view = new RaceView(canvas, track, m.contact, settings.camera);
+          view = openView(o.canvas, (c) => new RaceView(c, track, m.contact, settings.camera));
+          if (!view) {
+            teardown();
+            noWebGL(ui);
+            return;
+          }
           race = new RaceState(track, laps, () => car);
           race.apply(m);
           stopLoop = startLoop(loopParts());
@@ -140,7 +157,8 @@ export function play(o: PlayOpts): void {
         if (m.car === car) audio.contact();
         break;
       case "notice":
-        if (flow.view === "grid") grid.notice(noticeText(m.code, m.msg));
+        if (flow.view === "grid" && garageOpen) toast.show(noticeText(m.code, m.msg));
+        else if (flow.view === "grid") grid.notice(noticeText(m.code, m.msg));
         else hud.toast(noticeText(m.code, m.msg));
         break;
     }
@@ -181,6 +199,9 @@ export function play(o: PlayOpts): void {
     session.close();
     controls.dispose();
     hud.dispose();
+    grid.dispose();
+    toast.clear();
+    window.removeEventListener("keydown", onKey);
     audio.dispose();
     view?.dispose();
     view = null;

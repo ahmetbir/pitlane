@@ -3,7 +3,12 @@
 import { fill, h } from "roomkit/ui/dom";
 import { t } from "../i18n/index.ts";
 import type { ResultRow } from "../net/protocol.ts";
-import { fmtLap, fmtPenalty } from "./fmt.ts";
+import { fmtLap } from "./fmt.ts";
+
+/** A penalty: 5000 → "+5 s" / "+5 sn", 0 → "". */
+export function penaltyText(ms: number): string {
+  return ms > 0 ? t("results.penaltySec", { n: Math.round(ms / 1000) }) : "";
+}
 
 /** One table row's texts; dnf when the car did not finish. */
 export function resultCells(r: ResultRow): { pos: string; name: string; laps: string; total: string; best: string; penalty: string; dnf: boolean } {
@@ -14,7 +19,7 @@ export function resultCells(r: ResultRow): { pos: string; name: string; laps: st
     laps: String(r.laps),
     total: dnf ? t("results.dnf") : fmtLap(r.total),
     best: r.best > 0 ? fmtLap(r.best) : fmtLap(0),
-    penalty: fmtPenalty(r.penalty),
+    penalty: penaltyText(r.penalty),
     dnf,
   };
 }
@@ -26,7 +31,8 @@ export function fastest(rows: readonly ResultRow[]): number {
   return m;
 }
 
-export function resultsView(rows: readonly ResultRow[], own: number): HTMLElement {
+/** The results screen; actions (Leave) go under the table. */
+export function resultsView(rows: readonly ResultRow[], own: number, ...actions: HTMLElement[]): HTMLElement {
   const top = fastest(rows);
   const body = h("tbody");
   fill(body, ...rows.map((r) => {
@@ -46,5 +52,6 @@ export function resultsView(rows: readonly ResultRow[], own: number): HTMLElemen
     h("section", { class: "panel" },
       h("h2", {}, t("results.title")),
       h("div", { class: "table-wrap" }, h("table", { class: "table results" }, h("thead", {}, head), body)),
-      h("p", { class: "muted hint" }, t("results.next"))));
+      h("p", { class: "muted hint" }, t("results.next")),
+      actions.length ? h("div", { class: "actions" }, ...actions) : null));
 }

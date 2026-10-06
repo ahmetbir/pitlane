@@ -7,11 +7,11 @@ import { t } from "../i18n/index.ts";
 import type { Gap, SectorColour } from "../timing/standings.ts";
 import { fmtDelta, fmtGap, fmtLap, fmtTime, kmh } from "./fmt.ts";
 import { MiniMap, type Dot, type XZ } from "./minimap.ts";
+import { Toast } from "./widgets.ts";
 
 const RPM_IDLE = 4000;
 const RPM_LIMIT = 13500;
 const RPM_SHIFT = 12800; // the gearbox's upshift point
-const TOAST_MS = 3000;
 const GO_MS = 1200;
 
 export type GapView = { name: string; gap: Gap };
@@ -60,30 +60,30 @@ export class Hud {
   private readonly gear = h("span", { class: "gear mono" });
   private readonly rpm = h("i", { class: "rpm-fill" });
   private readonly hint = h("div", { class: "hint-banner", role: "status" });
-  private readonly toastEl = h("div", { class: "toast", role: "status" });
+  private readonly toasts = new Toast();
   private readonly lamps = [0, 1, 2, 3, 4].map(() => h("i", { class: "lamp" }));
   private readonly lightsEl: HTMLElement;
   private readonly go = h("div", { class: "go" });
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private goTimer: ReturnType<typeof setTimeout> | null = null;
   private shiftLit = false;
   private lastSpeed = -1;
   private lastGear = -1;
 
-  constructor(outline: readonly XZ[]) {
+  /** leave: the Leave button, placed in the top-left panel. */
+  constructor(outline: readonly XZ[], leave: HTMLElement) {
     this.map = new MiniMap(outline);
     this.lightsEl = h("div", { class: "lights", hidden: true }, h("div", { class: "lamps" }, ...this.lamps), this.go);
     this.el = h("div", { class: "hud", "aria-live": "off" },
-      h("div", { class: "hud-tl" }, cell(t("hud.pos"), this.pos), cell(t("hud.lap"), this.lap)),
+      h("div", { class: "hud-tl" }, cell(t("hud.pos"), this.pos), cell(t("hud.lap"), this.lap), leave),
       h("div", { class: "hud-tr" },
         h("div", { class: "times" }, cell(t("hud.time"), this.cur), this.delta, cell(t("hud.last"), this.last), cell(t("hud.best"), this.best)),
         h("div", { class: "sectors" }, ...this.sectors),
         this.ahead, this.behind),
       h("div", { class: "hud-bl" }, this.map.el),
       h("div", { class: "hud-bc" },
-        h("div", { class: "dash" }, this.speed, h("span", { class: "unit" }, "km/h"), h("span", { class: "gear-box" }, h("span", { class: "k" }, t("hud.gear")), this.gear)),
+        h("div", { class: "dash" }, this.speed, h("span", { class: "unit" }, t("hud.kmh")), h("span", { class: "gear-box" }, h("span", { class: "k" }, t("hud.gear")), this.gear)),
         h("div", { class: "rpm" }, this.rpm)),
-      this.hint, this.toastEl, this.lightsEl);
+      this.hint, this.toasts.el, this.lightsEl);
   }
 
   /** The text parts (~10 Hz). */
@@ -145,14 +145,11 @@ export class Hud {
 
   /** A short message in the middle of the screen. */
   toast(msg: string): void {
-    text(this.toastEl, msg);
-    this.toastEl.classList.add("on");
-    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => this.toastEl.classList.remove("on"), TOAST_MS);
+    this.toasts.show(msg);
   }
 
   dispose(): void {
-    if (this.toastTimer !== null) clearTimeout(this.toastTimer);
+    this.toasts.clear();
     if (this.goTimer !== null) clearTimeout(this.goTimer);
   }
 

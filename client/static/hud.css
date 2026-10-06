@@ -7,7 +7,7 @@
 .hud .big { font-size: 1.9rem; font-style: italic; }
 
 .hud-tl, .hud-tr, .hud-bc { position: absolute; background: rgba(10, 13, 18, 0.62); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; backdrop-filter: blur(4px); }
-.hud-tl { top: 14px; left: 14px; display: flex; gap: 22px; padding: 10px 16px; }
+.hud-tl { top: 14px; left: 14px; display: flex; gap: 22px; padding: 10px 16px; align-items: center; pointer-events: auto; }
 .hud-tr { top: 14px; right: 14px; padding: 10px 14px; min-width: 210px; display: flex; flex-direction: column; gap: 6px; }
 .hud .times { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: end; }
 .hud .times .cell:nth-of-type(n + 2) .v { font-size: 0.95rem; font-weight: 600; }
@@ -49,12 +49,24 @@
 .hud .lamp.on { background: radial-gradient(circle at 40% 35%, #ff8a80, #ff2418 55%, #b30d05); box-shadow: 0 0 22px rgba(255, 36, 24, 0.85); }
 .hud .go { font-size: 2.4rem; font-weight: 900; font-style: italic; color: var(--green); min-height: 1em; }
 
-.hud-leave { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5; opacity: 0.75; }
+.hud-leave { opacity: 0.8; text-shadow: none; }
 .hud-leave:hover { opacity: 1; }
 
 @media (max-width: 700px) {
-  .hud .big { font-size: 1.4rem; }
-  .hud-tr { min-width: 170px; }
-  .minimap { width: 120px; height: 120px; }
-  .hud .lamp { width: 30px; height: 30px; }
+  .hud .big { font-size: 1.3rem; }
+  .hud-tl { top: 10px; left: 10px; gap: 12px; padding: 8px 10px; }
+  .hud-tr { top: auto; bottom: 118px; right: 10px; min-width: 0; width: min(190px, calc(100% - 20px)); padding: 8px 10px; }
+  .hud .times .cell:first-child .v { font-size: 1.1rem; }
+  .hud-bl { left: 10px; bottom: 10px; }
+  .minimap { width: 100px; height: 100px; }
+  .hud-bc { left: auto; right: 10px; bottom: 10px; transform: none; min-width: 0; width: calc(100% - 130px); max-width: 220px; padding: 8px 12px 10px; }
+  .hud .speed { font-size: 2rem; }
+  .hud .gear { font-size: 1.5rem; }
+  .hud .gear-box { margin-left: 8px; }
+  .hud .lights { top: 70px; }
+  .hud .lamp { width: 28px; height: 28px; }
+  .hud .lamps { gap: 8px; padding: 8px 10px; }
+  .hud .hint-banner { top: 30%; white-space: normal; text-align: center; max-width: calc(100% - 32px); }
+  .hud .hint-banner.warn { font-size: 1.2rem; }
+  #banner { top: 64px; }
 }

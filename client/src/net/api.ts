@@ -23,12 +23,12 @@ const PHASES = ["grid", "lights", "racing", "finish", "results"] as const;
 export type Reply = { ok: boolean; status: number; body: unknown };
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** GETs url; null on network errors and after the timeout. */
-export async function request(url: string, fetchImpl: Fetch = (u, i) => fetch(u, i)): Promise<Reply | null> {
+/** GETs url with headers; null on network errors and after the timeout. */
+export async function request(url: string, fetchImpl: Fetch = (u, i) => fetch(u, i), headers: Record<string, string> = {}): Promise<Reply | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetchImpl(url, { signal: ctl.signal, credentials: "same-origin", cache: "no-store" });
+    const res = await fetchImpl(url, { headers, signal: ctl.signal, credentials: "same-origin", cache: "no-store" });
     let body: unknown = null;
     try {
       body = (await res.json()) as unknown;
@@ -86,3 +86,26 @@ async function board<T>(url: string, row: (v: unknown) => T | null, fetchImpl?: 
 
 export const fetchWins = (p: Period, f?: Fetch) => board(`/api/leaderboard?period=${p}`, winRow, f);
 export const fetchLaps = (p: Period, f?: Fetch) => board(`/api/leaderboard?period=${p}&key=kiyi`, lapRow, f);
+
+/** The pilot header of /api/me (roomkit pilot.Header). */
+export const PILOT_HEADER = "X-Pilot-Token";
+
+export type PilotCard = { name: string; races: number; wins: number; podiums: number; laps: number; best: number };
+
+/** An /api/me body: the card, "none" for {"pilot":null}, null when malformed. Best is Kıyı's best lap ms (0 = none). */
+export function parseMe(v: unknown): PilotCard | "none" | null {
+  if (!isObj(v) || !("pilot" in v)) return null;
+  const p = v.pilot;
+  if (p === null) return "none";
+  if (!isObj(p) || typeof p.name !== "string" || !count(p.races) || !count(p.wins) || !count(p.podiums) || !count(p.laps)) return null;
+  const best = isObj(p.best) && count(p.best.kiyi) ? p.best.kiyi : 0;
+  return { name: p.name, races: p.races, wins: p.wins, podiums: p.podiums, laps: p.laps, best };
+}
+
+/** The own pilot card: "none" without a (known) token, "off" when stats are off, null on failure. */
+export async function fetchMe(token: string, fetchImpl?: Fetch): Promise<PilotCard | "none" | "off" | null> {
+  if (!token) return "none";
+  const r = await request("/api/me", fetchImpl, { [PILOT_HEADER]: token });
+  if (r && r.status === 503) return "off";
+  return r?.ok ? parseMe(r.body) : null;
+}

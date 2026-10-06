@@ -46,8 +46,10 @@ p { margin: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35); }
 .panel.narrow { width: min(440px, 100%); margin: auto; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.home-grid { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 20px; align-items: start; }
-@media (max-width: 820px) { .home-grid { grid-template-columns: 1fr; } }
+.home-grid { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.home-grid > * { min-width: 0; }
+@media (max-width: 820px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .screen { padding: 20px 16px; } .brand h1 { font-size: 1.6rem; } .panel { padding: 16px; } }
 
 /* Controls */
 .btn { appearance: none; border: 1px solid var(--line); background: #1b212b; color: var(--text); font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 9px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s, border-color 0.15s, transform 0.05s; }
@@ -127,10 +129,23 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .notice { color: var(--warn); min-height: 1.2em; font-size: 0.9rem; }
 
 /* Banner and error card (roomkit) */
-#banner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+/* Below the HUD's top panels, so it never covers Leave. */
+#banner { position: fixed; top: 96px; max-width: calc(100% - 32px); left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
 #banner.error { border-color: var(--accent); }
 .error-card h2 { color: var(--accent-2); }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: var(--accent); animation: spin 0.8s linear infinite; display: inline-block; }
 .loading { flex-direction: row; align-items: center; justify-content: center; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* A toast over pages and overlays (the HUD has its own placement). */
+.toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: calc(100% - 32px); padding: 10px 18px; border-radius: 10px; background: rgba(255, 176, 32, 0.95); color: #111; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+.toast.on { opacity: 1; }
+
+/* Own stats on the leaderboard page */
+.me:empty { display: none; }
+.me { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: rgba(255, 59, 47, 0.08); border: 1px solid rgba(255, 59, 47, 0.25); }
+.me h3 { margin: 0; font-size: 0.95rem; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat strong { font-size: 1.25rem; }

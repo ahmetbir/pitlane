@@ -30,7 +30,7 @@ function nameField(value: string): HTMLInputElement {
 
 /** The typed name, or a generated one; stored for the next visit. */
 function takeName(input: HTMLInputElement): string {
-  const n = input.value.trim().slice(0, NAME_MAX) || `Pilot${Math.floor(100 + Math.random() * 900)}`;
+  const n = input.value.trim().slice(0, NAME_MAX) || t("home.defaultName", { n: Math.floor(100 + Math.random() * 900) });
   storeName(n);
   return n;
 }

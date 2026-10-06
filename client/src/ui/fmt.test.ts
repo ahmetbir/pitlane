@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fmtDelta, fmtGap, fmtLap, fmtPenalty, fmtTime, kmh } from "./fmt.ts";
+import { fmtDelta, fmtGap, fmtLap, fmtTime, kmh } from "./fmt.ts";
 
 test("lap times: m:ss.mmm, blank when missing", () => {
   assert.equal(fmtLap(83456), "1:23.456");
@@ -31,10 +31,8 @@ test("gaps: tenths, minutes past 60 s", () => {
   assert.equal(fmtGap(-300), "0.0");
 });
 
-test("speed and penalty", () => {
+test("speed", () => {
   assert.equal(kmh(27.78), 100);
   assert.equal(kmh(-10), 36);
   assert.equal(kmh(NaN), 0);
-  assert.equal(fmtPenalty(5000), "+5 s");
-  assert.equal(fmtPenalty(0), "");
 });

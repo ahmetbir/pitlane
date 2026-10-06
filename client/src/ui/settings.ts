@@ -4,7 +4,7 @@ import { t } from "../i18n/index.ts";
 import type { CamMode } from "../render/cams.ts";
 import { langToggle } from "./lang.ts";
 import { loadSettings, saveSettings } from "./prefs.ts";
-import { page, seg } from "./widgets.ts";
+import { focusFirst, page, seg } from "./widgets.ts";
 
 export function showSettings(root: HTMLElement, back: () => void): void {
   const s = loadSettings();
@@ -24,4 +24,5 @@ export function showSettings(root: HTMLElement, back: () => void): void {
     h("div", { class: "field" }, h("label", { class: "slider-head", for: "volume" }, h("span", {}, t("settings.volume")), volOut), vol),
     h("div", { class: "field" }, h("span", { class: "label" }, t("settings.language")), langToggle(() => showSettings(root, back))),
     h("div", { class: "field" }, h("span", { class: "label" }, t("settings.controls")), h("p", { class: "muted hint" }, t("settings.keys")))));
+  focusFirst(root);
 }

@@ -35,8 +35,3 @@ export function fmtGap(ms: number): string {
 export function kmh(ms: number): number {
   return Number.isFinite(ms) ? Math.round(Math.abs(ms) * 3.6) : 0;
 }
-
-/** A penalty: 5000 → "+5 s", 0 → "". */
-export function fmtPenalty(ms: number): string {
-  return ms > 0 ? `+${Math.round(ms / 1000)} s` : "";
-}

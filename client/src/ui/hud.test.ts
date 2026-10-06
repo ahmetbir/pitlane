@@ -38,4 +38,6 @@ test("results: DNF marking, fastest lap", () => {
   assert.equal(dnf.best, "-:--.---");
   assert.equal(fastest([row, { ...row, best: 79000 }, { ...row, best: 0 }]), 79000);
   assert.equal(fastest([]), 0);
+  setLang("tr", null);
+  assert.equal(resultCells(row).penalty, "+5 sn");
 });

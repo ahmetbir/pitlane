@@ -39,7 +39,7 @@ export class GridScreen {
   show(g: Grid, own: number, room: string): void {
     text(this.code, room ? t("grid.share", { code: room }) : "");
     const mine = g.cars.find((c) => c.id === own);
-    text(this.readyBtn, mine?.ready ? t("grid.unready") : t("grid.ready"));
+    text(this.readyBtn, mine?.ready ? t("grid.update") : t("grid.ready"));
     this.startBtn.hidden = g.creator === 0 || g.creator !== own;
     fill(this.list, ...g.cars.map((c) => {
       const crown = c.id === g.creator ? h("span", { class: "crown", title: t("grid.creator"), "aria-label": t("grid.creator") }, "♛") : null;
@@ -51,6 +51,11 @@ export class GridScreen {
         c.bot ? h("span", { class: "state muted" }, "–")
           : h("span", { class: `state ${c.ready ? "ok" : "muted"}` }, c.ready ? t("grid.isReady") : t("grid.waiting")));
     }));
+  }
+
+  dispose(): void {
+    if (this.noteTimer !== null) clearTimeout(this.noteTimer);
+    this.noteTimer = null;
   }
 
   /** A refused action (notice), shown for a few seconds. */
