@@ -6,6 +6,9 @@ import "math"
 // lap, below the 3600-4600 m the shape test requires.
 const controlScale = 1.5
 
+// startOffset is the arc length from control point 0 to the start line (on the first straight).
+const startOffset = 300.0
+
 var kiyiControl = []pt{
 	{0, 0}, {300, 0}, {520, 10}, {600, 60}, {620, 140}, {580, 210}, {500, 230}, {430, 200},
 	{380, 250}, {400, 330}, {470, 370}, {560, 380}, {640, 430}, {660, 520}, {600, 580}, {480, 590},
@@ -17,7 +20,7 @@ func buildKiyi() *Track {
 	for i, c := range kiyiControl {
 		scaled[i] = pt{c.x * controlScale, c.z * controlScale}
 	}
-	pts, length := resample(catmullRom(scaled, 0.25))
+	pts, length := resample(catmullRom(scaled, 0.25), startOffset)
 	n := len(pts)
 	ds := length / float64(n)
 	t := &Track{ID: "kiyi", Width: 14, Kerb: 1, Runoff: 12, Length: length, Segs: make([]Seg, n)}
@@ -47,6 +50,6 @@ func buildKiyi() *Track {
 		sg := t.Segs[int(math.Round(s/ds))%n]
 		t.Grid[k] = Pose{X: x, Z: z, H: math.Atan2(sg.TZ, sg.TX)}
 	}
-	t.Line = racingLine(t.Segs, t.Width/2-1.5)
+	t.Line, t.LineSweeps = racingLine(t.Segs, t.Width/2-1.5)
 	return t
 }

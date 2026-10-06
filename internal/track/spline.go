@@ -36,8 +36,9 @@ func mix(a, b pt, ta, tb, t float64) pt {
 	return pt{a.x*u + b.x*v, a.z*u + b.z*v}
 }
 
-// resample returns n points evenly spaced by arc length along the closed polyline, plus its length.
-func resample(poly []pt) ([]pt, float64) {
+// resample returns n points evenly spaced by arc length along the closed polyline, the first one
+// `origin` metres past poly[0], plus the polyline length.
+func resample(poly []pt, origin float64) ([]pt, float64) {
 	m := len(poly)
 	cum := make([]float64, m+1)
 	for i := 0; i < m; i++ {
@@ -49,7 +50,10 @@ func resample(poly []pt) ([]pt, float64) {
 	out := make([]pt, n)
 	j := 0
 	for i := 0; i < n; i++ {
-		s := float64(i) * ds
+		s := math.Mod(origin+float64(i)*ds, length)
+		if i == 0 || s < cum[j] {
+			j = 0
+		}
 		for cum[j+1] < s {
 			j++
 		}

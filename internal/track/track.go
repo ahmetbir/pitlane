@@ -5,6 +5,12 @@
 // normal of tangent (TX,TZ) is (-TZ, TX); lateral offsets are positive to the left; curvature
 // K is positive when the track turns left (counter-clockwise). Everything is deterministic and
 // only construction uses transcendental functions.
+//
+// Handedness: +Z is +X rotated 90 degrees counter-clockwise in this 2D frame (left of a car
+// heading +X); a Y-up Three.js client maps track z to -Z to keep it CCW seen from above.
+//
+// Kiyi returns a shared, read-only *Track: never mutate its slices. Locate returns i, the nearest
+// seg (callers keep it as the next hint), and s, the refined distance along the track.
 package track
 
 import (
@@ -37,6 +43,8 @@ type Track struct {
 	Sectors [3]float64
 	Grid    [10]Pose
 	Line    []float64 // racing-line lateral offset per seg
+
+	LineSweeps int // relaxation sweeps the racing line needed (diagnostic)
 }
 
 var (
@@ -108,6 +116,13 @@ func (t *Track) Locate(x, z float64, hint int) (i int, lat, s float64) {
 		for o := -40; o <= 40; o++ {
 			try((((hint + o) % n) + n) % n)
 		}
+		// A stale hint finds only a distant or edge-of-window seg: search everything.
+		if w := t.WallLat(); bd > w*w || edgeOffset(best, hint, n) {
+			bd = math.Inf(1)
+			for k := 0; k < n; k++ {
+				try(k)
+			}
+		}
 	}
 	u := float64(best)
 	for it := 0; it < 8; it++ {
@@ -121,4 +136,10 @@ func (t *Track) Locate(x, z float64, hint int) (i int, lat, s float64) {
 		s += t.Length
 	}
 	return best, lat, s
+}
+
+// edgeOffset reports whether best sits on the edge of the ±40 window around hint.
+func edgeOffset(best, hint, n int) bool {
+	d := ((best-hint)%n + n) % n
+	return d == 40 || d == n-40
 }

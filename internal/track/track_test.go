@@ -148,3 +148,35 @@ func TestRacingLineWithinTrack(t *testing.T) {
 		t.Fatalf("line curvature %v >= centre %v", l, c)
 	}
 }
+
+func TestLocateStaleHint(t *testing.T) {
+	tr := Kiyi()
+	n := len(tr.Segs)
+	x, z := tr.Point(2000, 0)
+	_, lat, s := tr.Locate(x, z, 50)
+	if math.Abs(lat) > 0.05 || math.Abs(s-2000) > 0.05 {
+		t.Fatalf("stale hint → s %v lat %v", s, lat)
+	}
+	for _, p := range [][2]float64{{123.4, -5}, {1500.7, 4}, {3300.1, 0.5}, {4070, -6.5}} {
+		x, z := tr.Point(p[0], p[1])
+		for h := 0; h < n; h += 7 {
+			_, gl, gs := tr.Locate(x, z, h)
+			if math.Abs(gl-p[1]) > 0.05 || math.Abs(wrap(gs-p[0], tr.Length)) > 0.05 {
+				t.Fatalf("hint %d: s %v lat %v → %v %v", h, p[0], p[1], gs, gl)
+			}
+		}
+	}
+}
+
+func TestStartOnStraight(t *testing.T) {
+	tr := Kiyi()
+	h0 := math.Atan2(tr.Segs[0].TZ, tr.Segs[0].TX)
+	for k, p := range tr.Grid {
+		if d := wrap(p.H-h0, 2*math.Pi); math.Abs(d) > 0.03 {
+			t.Errorf("slot %d heading %v vs start %v", k, p.H, h0)
+		}
+		if d := wrap(p.H-tr.Grid[0].H, 2*math.Pi); math.Abs(d) > 0.03 {
+			t.Errorf("slot %d heading %v vs slot 0 %v", k, p.H, tr.Grid[0].H)
+		}
+	}
+}
