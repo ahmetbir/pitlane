@@ -34,7 +34,7 @@ func (r *rng) next() uint64 {
 func (r *rng) float() float64 { return float64(r.next()>>11) / (1 << 53) }
 
 // rangeF is uniform in [lo, hi).
-func (r *rng) rangeF(lo, hi float64) float64 { return lo + (hi-lo)*r.float() }
+func (r *rng) rangeF(lo, hi float64) float64 { return lo + float64((hi-lo)*r.float()) }
 
 // rangeI is uniform in [lo, hi].
 func (r *rng) rangeI(lo, hi int) int { return lo + int(r.next()%uint64(hi-lo+1)) }
@@ -146,9 +146,26 @@ type trackFile struct {
 	Cases  []trackCase `json:"cases"`
 }
 
-// Track returns track.json: Point(s, lat) and Locate(x, z, -1) of the result.
-func Track() []byte {
-	tr := track.Kiyi()
+// Track returns track.json for the circuit as construction builds it on this machine.
+func Track() []byte { return TrackOf(track.Kiyi()) }
+
+// TrackFromKiyi returns track.json for the circuit a kiyi.json file describes. Queries are
+// bit-portable but construction is not, so this is the architecture-independent route.
+func TrackFromKiyi(kiyiJSON []byte) ([]byte, error) {
+	var f kiyiFile
+	if err := json.Unmarshal(kiyiJSON, &f); err != nil {
+		return nil, err
+	}
+	tr := &track.Track{ID: f.ID, Width: f.Width, Kerb: f.Kerb, Runoff: f.Runoff, Length: f.Length,
+		Sectors: f.Sectors, Line: f.Line}
+	for _, s := range f.Segs {
+		tr.Segs = append(tr.Segs, track.Seg{X: s[0], Z: s[1], TX: s[2], TZ: s[3], NX: s[4], NZ: s[5], S: s[6], K: s[7]})
+	}
+	return TrackOf(tr), nil
+}
+
+// TrackOf returns track.json: Point(s, lat) and Locate(x, z, -1) of the result.
+func TrackOf(tr *track.Track) []byte {
 	r := &rng{s: 0x7a4c0de}
 	f := trackFile{Length: tr.Length}
 	for i := 0; i < trackCases; i++ {

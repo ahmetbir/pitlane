@@ -82,6 +82,10 @@ func (m *Match) Welcome(id room.PlayerID, code, newToken string, out room.Outbox
 	}
 }
 
+// Autopilot is the input a bot would drive id's car with this tick (see race.Race.Autopilot);
+// tests and tools use it to script humans.
+func (m *Match) Autopilot(id room.PlayerID) car.Input { return m.r.Autopilot(race.CarID(id)) }
+
 func (m *Match) Leave(id room.PlayerID) {
 	m.r.Unseat(race.CarID(id))
 	m.humans--

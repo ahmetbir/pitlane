@@ -40,7 +40,7 @@ func moveCar(st *car.State, p *car.Params, in car.Input, tr *track.Track, hint *
 	v := worldVel(st)
 	vn, vt := v.dot(n), v.dot(t)
 	if vn > 0 {
-		wallImpulse = car.Mass * (1 + wallBounce) * vn
+		wallImpulse = float64(car.Mass*(1+wallBounce)) * vn
 		vn = -wallBounce * vn
 	}
 	setWorldVel(st, n.scale(vn).add(t.scale(vt*wallSlide)))

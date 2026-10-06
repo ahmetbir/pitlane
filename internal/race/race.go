@@ -307,6 +307,17 @@ func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
 	return c.brain.Drive(&c.St, &c.P, c.Seg, near, stand)
 }
 
+// Autopilot is the input car id's own bot brain would drive this tick: a seated human keeps
+// the brain it had as a bot. Zero under the lights or for an unknown id. It advances the
+// brain, so call it once per tick at most.
+func (r *Race) Autopilot(id CarID) car.Input {
+	if r.car(id) == nil {
+		return car.Input{}
+	}
+	sp := r.spots()
+	return r.botInput(int(id)-1, &sp)
+}
+
 // marshal puts every unfinished car that is not drivable and has been slower than resetSpeed
 // for resetTicks racing ticks back on the racing line, pointing down the track and at rest
 // (there is no reverse gear: a car nose-first against the wall cannot leave by itself). The

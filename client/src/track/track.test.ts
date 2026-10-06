@@ -18,22 +18,20 @@ test("kiyi.json loads", () => {
   assert.equal(tr.wallLat(), 20);
 });
 
-// Go on arm64 fuses the unmaterialised a*b+c in frame, Point and Locate into
-// FMADD; JS never fuses, so a few results differ by one ulp (measured: 3.6e-15).
-const tol = 1e-12;
-const near = (got: number, want: number, what: string): void =>
-  assert.ok(Math.abs(got - want) <= tol, `${what}: got ${got}, want ${want}`);
+// Go materialises every product in the queries (no FMA), so results are bit-identical.
+const same = (got: number, want: number, what: string): void =>
+  assert.ok(Object.is(got, want), `${what}: got ${got}, want ${want}`);
 
 test("point and locate match Go", () => {
   assert.equal(file.cases.length, 50);
   file.cases.forEach((c, k) => {
     const [x, z] = tr.point(c.s, c.lat);
-    near(x, c.x, `case ${k} x`);
-    near(z, c.z, `case ${k} z`);
+    same(x, c.x, `case ${k} x`);
+    same(z, c.z, `case ${k} z`);
     const loc = tr.locate(c.x, c.z, -1);
     assert.equal(loc.i, c.i, `case ${k} i`);
-    near(loc.lat, c.locLat, `case ${k} lat`);
-    near(loc.s, c.locS, `case ${k} s`);
+    same(loc.lat, c.locLat, `case ${k} lat`);
+    same(loc.s, c.locS, `case ${k} s`);
   });
 });
 

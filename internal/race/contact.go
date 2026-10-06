@@ -153,12 +153,12 @@ func effMass(ra, rb, u vec) float64 {
 
 // worldVel converts the body velocity to world axes.
 func worldVel(st *car.State) vec {
-	return vec{st.VX*st.HX - st.VY*st.HZ, st.VX*st.HZ + st.VY*st.HX}
+	return vec{float64(st.VX*st.HX) - float64(st.VY*st.HZ), float64(st.VX*st.HZ) + float64(st.VY*st.HX)}
 }
 
 func setWorldVel(st *car.State, v vec) {
-	st.VX = v.x*st.HX + v.z*st.HZ
-	st.VY = -v.x*st.HZ + v.z*st.HX
+	st.VX = float64(v.x*st.HX) + float64(v.z*st.HZ)
+	st.VY = float64(-v.x*st.HZ) + float64(v.z*st.HX)
 }
 
 // pointVel is the world velocity of the body point at offset r from the centre.

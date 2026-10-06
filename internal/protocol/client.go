@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/ahmetbir/pitlane/internal/car"
@@ -122,6 +123,13 @@ func (in Input) Held() Input       { return in }
 // Car converts to the car model's input: th/100, br/100, st/127.
 func (in Input) Car() car.Input {
 	return car.Input{Throttle: float64(in.Th) / 100, Brake: float64(in.Br) / 100, Steer: float64(in.St) / 127}
+}
+
+// WireInput quantises a car input to the wire's units (th/100, br/100, st/127), as a
+// client does before sending it.
+func WireInput(in car.Input) Input {
+	in = in.Clean()
+	return Input{Th: int8(math.Round(in.Throttle * 100)), Br: int8(math.Round(in.Brake * 100)), St: int8(math.Round(in.Steer * 127))}
 }
 
 // Input converts an "in" message to a clamped input (also when m was not

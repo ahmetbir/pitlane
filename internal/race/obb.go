@@ -17,9 +17,9 @@ type vec struct{ x, z float64 }
 
 func (a vec) add(b vec) vec       { return vec{a.x + b.x, a.z + b.z} }
 func (a vec) sub(b vec) vec       { return vec{a.x - b.x, a.z - b.z} }
-func (a vec) scale(k float64) vec { return vec{a.x * k, a.z * k} }
-func (a vec) dot(b vec) float64   { return a.x*b.x + a.z*b.z }
-func (a vec) cross(b vec) float64 { return a.x*b.z - a.z*b.x }
+func (a vec) scale(k float64) vec { return vec{float64(a.x * k), float64(a.z * k)} }
+func (a vec) dot(b vec) float64   { return float64(a.x*b.x) + float64(a.z*b.z) }
+func (a vec) cross(b vec) float64 { return float64(a.x*b.z) - float64(a.z*b.x) }
 func (a vec) len() float64        { return math.Sqrt(a.dot(a)) }
 
 // box is a car footprint: centre and unit heading; body left is (−h.z, h.x).

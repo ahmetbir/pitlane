@@ -147,44 +147,32 @@ func (o *recorder) bytes() []byte {
 	return b.Bytes()
 }
 
-// driver is a seeded scripted human: held stretches of throttle, brake and steer.
+// driver is a scripted human. It drives with the bot brain of its car (via the match's
+// Autopilot hook), quantised to the wire like a real client's input, so it completes laps.
+// A driver with wildAt > 0 takes the wheel for wildLen ticks from that tick on, held on
+// full right steer: it leaves the asphalt and that lap is invalid.
 type driver struct {
-	s        uint64
-	left     int
-	in       protocol.Input
-	cautious bool
+	wildAt int
+	tick   int
 }
 
-func (d *driver) next() uint64 {
-	d.s += 0x9e3779b97f4a7c15
-	z := d.s
-	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
-	z = (z ^ (z >> 27)) * 0x94d049bb133111eb
-	return z ^ (z >> 31)
-}
+const wildLen = 150
 
-func (d *driver) input() protocol.Input {
-	if d.left == 0 {
-		d.left = 20 + int(d.next()%60)
-		r := d.next()
-		d.in = protocol.Input{Th: int8(60 + r%41), St: int8(int(r>>8%61) - 30)}
-		if r>>20%5 == 0 {
-			d.in.Th, d.in.Br = 0, int8(30+r>>24%71)
-		}
-		if d.cautious {
-			d.in.Th, d.in.St = d.in.Th/2, d.in.St/3
-		}
+// input is the autopilot's input for this tick through the wire, or the wild stretch.
+func (d *driver) input(auto car.Input) protocol.Input {
+	d.tick++
+	if d.wildAt > 0 && d.tick >= d.wildAt && d.tick < d.wildAt+wildLen {
+		return protocol.Input{Th: 70, St: -127}
 	}
-	d.left--
-	return d.in
+	return protocol.WireInput(auto)
 }
 
 // maxTicks bounds a race: three laps plus the finish window fit well inside.
 const maxTicks = 60 * 60 * 12
 
 // play runs two humans and eight bots through a 3-lap race and returns the transcript.
-func play(contact race.Contact) []byte {
-	m := match.New(race.Settings{Handling: car.Arcade, Contact: contact, Laps: 3, Listed: true, Seed: 7}, nil)
+func play(h car.Handling, contact race.Contact) []byte {
+	m := match.New(race.Settings{Handling: h, Contact: contact, Laps: 3, Listed: true, Seed: 7}, nil)
 	out := newRecorder()
 	var ids []room.PlayerID
 	for _, name := range []string{"Ace", "Bee"} {
@@ -201,11 +189,11 @@ func play(contact race.Contact) []byte {
 		m.Handle(id, protocol.ClientMsg{T: protocol.TReady, Setup: &setups[i]}, out)
 	}
 	m.Handle(ids[0], protocol.ClientMsg{T: protocol.TStart}, out)
-	drv := []*driver{{s: 11}, {s: 12, cautious: true}}
+	drv := []*driver{{}, {wildAt: 6000}}
 	for t := 0; t < maxTicks && !out.results; t++ {
 		in := map[room.PlayerID]protocol.Input{}
 		for i, id := range ids {
-			in[id] = drv[i].input()
+			in[id] = drv[i].input(m.Autopilot(id))
 		}
 		m.Step(in, out)
 	}
@@ -215,9 +203,9 @@ func play(contact race.Contact) []byte {
 	return out.bytes()
 }
 
-func deterministic(t *testing.T, contact race.Contact) []byte {
+func deterministic(t *testing.T, h car.Handling, contact race.Contact) []byte {
 	t.Helper()
-	a, b := play(contact), play(contact)
+	a, b := play(h, contact), play(h, contact)
 	if !bytes.Equal(a, b) {
 		t.Fatalf("race is not deterministic (line %d differs)", firstDiff(a, b))
 	}
@@ -267,23 +255,38 @@ func check(t *testing.T, path string, got []byte, tagged bool) {
 }
 
 func TestRaceSoft(t *testing.T) {
-	check(t, filepath.Join("testdata", "race_soft"), deterministic(t, race.Soft), true)
+	check(t, filepath.Join("testdata", "race_soft"), deterministic(t, car.Arcade, race.Soft), true)
 }
 
 func TestRaceFull(t *testing.T) {
-	check(t, filepath.Join("testdata", "race_full"), deterministic(t, race.Full), true)
+	check(t, filepath.Join("testdata", "race_full"), deterministic(t, car.Arcade, race.Full), true)
 }
 
-// TestVectorsFresh: the files on disk equal what cmd/vectors writes now. The
-// car model is FMA-safe by construction, so car.json is checked everywhere;
-// the track is built with transcendentals and unguarded arithmetic, so its
-// files are checked on the golden architecture only.
+func TestRaceSimSoft(t *testing.T) {
+	check(t, filepath.Join("testdata", "race_sim_soft"), deterministic(t, car.Sim, race.Soft), true)
+}
+
+// TestVectorsFresh: the files on disk equal what cmd/vectors writes now. Track queries are
+// FMA-safe, so track.json is recomputed from the committed kiyi.json on every architecture.
+// car.json (initial headings come from math.Cos/Sin, which the arm64 assembly of the math
+// package fuses differently) and kiyi.json (track construction) are checked, and written by
+// UPDATE_GOLDEN, on the golden architecture only.
 func TestVectorsFresh(t *testing.T) {
 	root := filepath.Join("..", "..")
-	check(t, filepath.Join(root, "testdata", "vectors", "car.json"), vectors.Car(), false)
-	if runtime.GOARCH != goldenArch && !updating() {
-		t.Skipf("track vectors are generated on %s; on %s only the car vectors are checked", goldenArch, runtime.GOARCH)
+	kiyi := filepath.Join(root, "client", "src", "track", "kiyi.json")
+	if runtime.GOARCH == goldenArch {
+		check(t, filepath.Join(root, "testdata", "vectors", "car.json"), vectors.Car(), false)
+		check(t, kiyi, vectors.Kiyi(), false)
+	} else {
+		t.Logf("car.json and kiyi.json are generated on %s; on %s they are only read", goldenArch, runtime.GOARCH)
 	}
-	check(t, filepath.Join(root, "testdata", "vectors", "track.json"), vectors.Track(), false)
-	check(t, filepath.Join(root, "client", "src", "track", "kiyi.json"), vectors.Kiyi(), false)
+	b, err := os.ReadFile(kiyi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tj, err := vectors.TrackFromKiyi(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(t, filepath.Join(root, "testdata", "vectors", "track.json"), tj, false)
 }

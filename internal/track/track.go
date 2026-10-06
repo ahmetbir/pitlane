@@ -9,6 +9,9 @@
 // Handedness: +Z is +X rotated 90 degrees counter-clockwise in this 2D frame (left of a car
 // heading +X); a Y-up Three.js client maps track z to -Z to keep it CCW seen from above.
 //
+// Queries (frame, Point, Locate) use only + - * / sqrt, with every product
+// materialised by float64() so arm64 cannot fuse it; they are bit-portable.
+//
 // Kiyi returns a shared, read-only *Track: never mutate its slices. Locate returns i, the nearest
 // seg (callers keep it as the next hint), and s, the refined distance along the track.
 package track
@@ -84,9 +87,9 @@ func (t *Track) frame(u float64) (x, z, tx, tz, nx, nz float64) {
 	f := u - fi
 	i := ((int(fi) % n) + n) % n
 	a, b := &t.Segs[i], &t.Segs[(i+1)%n]
-	x, z = a.X+(b.X-a.X)*f, a.Z+(b.Z-a.Z)*f
-	tx, tz = a.TX+(b.TX-a.TX)*f, a.TZ+(b.TZ-a.TZ)*f
-	l := math.Sqrt(tx*tx + tz*tz)
+	x, z = a.X+float64((b.X-a.X)*f), a.Z+float64((b.Z-a.Z)*f)
+	tx, tz = a.TX+float64((b.TX-a.TX)*f), a.TZ+float64((b.TZ-a.TZ)*f)
+	l := math.Sqrt(float64(tx*tx) + float64(tz*tz))
 	tx, tz = tx/l, tz/l
 	return x, z, tx, tz, -tz, tx
 }
@@ -94,7 +97,7 @@ func (t *Track) frame(u float64) (x, z, tx, tz, nx, nz float64) {
 // Point is the inverse of Locate: world position at distance s along the track, lat to the left.
 func (t *Track) Point(s, lat float64) (x, z float64) {
 	x, z, _, _, nx, nz := t.frame(s / t.ds())
-	return x + lat*nx, z + lat*nz
+	return x + float64(lat*nx), z + float64(lat*nz)
 }
 
 // Locate finds the nearest seg to (x, z). With hint >= 0 only segs within ±40 of hint (cyclic)
@@ -104,7 +107,7 @@ func (t *Track) Locate(x, z float64, hint int) (i int, lat, s float64) {
 	best, bd := 0, math.Inf(1)
 	try := func(k int) {
 		dx, dz := x-t.Segs[k].X, z-t.Segs[k].Z
-		if d := dx*dx + dz*dz; d < bd {
+		if d := float64(dx*dx) + float64(dz*dz); d < bd {
 			best, bd = k, d
 		}
 	}
@@ -127,10 +130,10 @@ func (t *Track) Locate(x, z float64, hint int) (i int, lat, s float64) {
 	u := float64(best)
 	for it := 0; it < 8; it++ {
 		cx, cz, tx, tz, _, _ := t.frame(u)
-		u += ((x-cx)*tx + (z-cz)*tz) / t.ds()
+		u += (float64((x-cx)*tx) + float64((z-cz)*tz)) / t.ds()
 	}
 	cx, cz, _, _, nx, nz := t.frame(u)
-	lat = (x-cx)*nx + (z-cz)*nz
+	lat = float64((x-cx)*nx) + float64((z-cz)*nz)
 	s = math.Mod(u*t.ds(), t.Length)
 	if s < 0 {
 		s += t.Length
