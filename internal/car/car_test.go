@@ -23,12 +23,18 @@ func run(h Handling, s Setup, in Input, ticks int) State {
 // corner holds ~40 m/s with a throttle/brake P-controller at a fixed steer
 // for 10 s. It returns the mean lateral acceleration (v·R) and radius (v/|R|)
 // over the last 2 s, and whether the car settled (spread of R < 0.01 rad/s and
-// of VY < 0.05 m/s over that window).
+// of VY < 0.05 m/s over that window, speed within 1 m/s of v).
 func corner(h Handling, s Setup, d Damage, steer float64) (ay, radius float64, steady bool) {
 	return cornerAt(h, s, d, steer, 40)
 }
 
 func cornerAt(h Handling, s Setup, d Damage, steer, v float64) (ay, radius float64, steady bool) {
+	return cornerThr(h, s, d, steer, v, -1)
+}
+
+// cornerThr is cornerAt with a fixed throttle when thr ≥ 0 (speed then held by
+// the brake alone).
+func cornerThr(h Handling, s Setup, d Damage, steer, v, thr float64) (ay, radius float64, steady bool) {
 	p := NewParams(h, s, d)
 	st := rest()
 	st.VX = v
@@ -38,6 +44,9 @@ func cornerAt(h Handling, s Setup, d Damage, steer, v float64) (ay, radius float
 	for i := range ticks {
 		e := v - st.Speed()
 		in := Input{Steer: steer, Throttle: e * 0.5, Brake: -e * 0.5}
+		if thr >= 0 {
+			in.Throttle = thr
+		}
 		Step(&st, &p, in.Clean(), asphalt)
 		if i >= ticks-tail {
 			ay += st.Speed() * math.Abs(st.R)
@@ -46,7 +55,7 @@ func cornerAt(h Handling, s Setup, d Damage, steer, v float64) (ay, radius float
 			ylo, yhi = min(ylo, st.VY), max(yhi, st.VY)
 		}
 	}
-	return ay / tail, radius / tail, hi-lo < 0.01 && yhi-ylo < 0.05
+	return ay / tail, radius / tail, hi-lo < 0.01 && yhi-ylo < 0.05 && math.Abs(st.Speed()-v) < 1
 }
 
 // grip is the highest steady-state lateral acceleration at speed v over a
@@ -81,11 +90,14 @@ func rolling(gearing int) float64 {
 	for st.Gear < 8 && st.VX*p.RPMPerMS[st.Gear-1] > shiftUp {
 		st.Gear++
 	}
+	prev := st.Speed()
 	for i := range 60 * 30 {
 		Step(&st, &p, Input{Throttle: 1}, asphalt)
-		if st.Speed() >= 75 {
-			return float64(i+1) * DT
+		if v := st.Speed(); v >= 75 {
+			// interpolate the crossing within the tick
+			return (float64(i) + (75-prev)/(v-prev)) * DT
 		}
+		prev = st.Speed()
 	}
 	return math.Inf(1)
 }
@@ -153,15 +165,144 @@ func TestSimHoldsSteadyCorner(t *testing.T) {
 
 func TestArcadeGripsMoreThanSim(t *testing.T) {
 	for _, v := range []float64{25, 40, 60} {
-		if arcade, sim := grip(Arcade, Damage{}, v), grip(Sim, Damage{}, v); !(arcade >= sim) {
+		if arcade, sim := grip(Arcade, Damage{}, v), grip(Sim, Damage{}, v); !(sim > 0 && arcade >= sim) {
 			t.Fatalf("%.0f m/s: steady lateral accel arcade %.2f sim %.2f", v, arcade, sim)
 		}
 	}
 }
 
 func TestDamageCutsFrontGrip(t *testing.T) {
-	if ok, hit := grip(Sim, Damage{}, 40), grip(Sim, Damage{FrontWing: 1}, 40); !(hit < ok) {
+	if ok, hit := grip(Sim, Damage{}, 40), grip(Sim, Damage{FrontWing: 1}, 40); !(hit > 0 && hit < ok) {
 		t.Fatalf("steady lateral accel intact %.2f, broken front wing %.2f", ok, hit)
+	}
+}
+
+// stopTime brakes fully from st and returns the time until speed < 0.5 m/s.
+func stopTime(h Handling, st State, limit float64) float64 {
+	p := NewParams(h, DefaultSetup(), Damage{})
+	for i := range int(limit / DT) {
+		if st.Speed() < 0.5 {
+			return float64(i) * DT
+		}
+		Step(&st, &p, Input{Brake: 1}, asphalt)
+	}
+	return math.Inf(1)
+}
+
+func TestSpunCarBrakesSideways(t *testing.T) {
+	st := rest()
+	st.VY = 15
+	if tm := stopTime(Sim, st, 3); tm > 3 {
+		t.Fatalf("sideways at 15 m/s did not stop within 3 s")
+	}
+}
+
+func TestSimSpinThenBrakeStops(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		st := rest()
+		st.VX = 40
+		for range 90 {
+			Step(&st, &p, Input{Steer: 1, Throttle: 1}, asphalt)
+		}
+		if tm := stopTime(h, st, 10); tm > 10 {
+			t.Fatalf("%v: after a full-lock slide (VX %.1f VY %.1f R %.2f) the car did not stop within 10 s", h, st.VX, st.VY, st.R)
+		}
+	}
+}
+
+func TestRevLimiterNoJitter(t *testing.T) {
+	p := NewParams(Sim, with(DefaultSetup(), Gearing, 1), Damage{})
+	st := rest()
+	flips, last := 0, 0.0
+	prev := st.RPM
+	for i := range 60 * 40 {
+		Step(&st, &p, Input{Throttle: 1}, asphalt)
+		if i >= 60*30 {
+			if d := st.RPM - prev; d != 0 {
+				if d*last < 0 {
+					flips++
+				}
+				last = d
+			}
+		}
+		prev = st.RPM
+	}
+	if st.Gear != 8 || st.RPM < taperRPM || flips >= 20 {
+		t.Fatalf("gear %d rpm %.0f direction changes %d", st.Gear, st.RPM, flips)
+	}
+}
+
+func TestDiffTradesTractionForCornering(t *testing.T) {
+	accel := func(diff int) float64 {
+		p := NewParams(Sim, with(DefaultSetup(), Diff, diff), Damage{})
+		st := rest()
+		st.VX = 20
+		for i := range 60 * 20 {
+			Step(&st, &p, Input{Throttle: 1}, asphalt)
+			if st.Speed() >= 40 {
+				return float64(i+1) * DT
+			}
+		}
+		return math.Inf(1)
+	}
+	if lo, hi := accel(1), accel(10); hi > lo {
+		t.Fatalf("20→40 m/s: diff 1 %.3f s, diff 10 %.3f s", lo, hi)
+	}
+	// At 70 m/s throttle 0.6 is close to what holds the speed, so the brake
+	// barely works against it.
+	held := func(diff int) float64 {
+		best := 0.0
+		for i := 1; i <= 20; i++ {
+			if ay, _, ok := cornerThr(Sim, with(DefaultSetup(), Diff, diff), Damage{}, float64(i)*0.05, 70, 0.6); ok {
+				best = max(best, ay)
+			}
+		}
+		return best
+	}
+	if lo, hi := held(1), held(10); !(hi > 0 && hi < lo) {
+		t.Fatalf("steady lateral accel at throttle 0.6: diff 1 %.2f, diff 10 %.2f", lo, hi)
+	}
+}
+
+// TestDerivedLiterals recomputes the derived constants with run-time float64
+// arithmetic (left to right, one rounding per operation, as JS does).
+func TestDerivedLiterals(t *testing.T) {
+	half, rho, area, m, g, a, b, l := 0.5, 1.225, 1.5, 798.0, 9.81, cgFront, cgRear, wheelbase
+	h, tw, sixty, two, pi, ed, first := cgHeight, trackW, 60.0, 2.0, math.Pi, 0.2, 3.0
+	first *= 5.39
+	for _, c := range []struct {
+		name      string
+		lit, want float64
+	}{
+		{"aeroQ", aeroQ, half * rho * area},
+		{"fzF0", fzF0, m * g * b / l},
+		{"fzR0", fzR0, m * g * a / l},
+		{"transferK", transferK, m * h / l},
+		{"latK", latK, h / tw},
+		{"rpmPerRad", rpmPerRad, sixty / (two * pi)},
+		{"envDragM", envDragM, ed * m},
+		{"first gear", gearTable[0][0], first},
+	} {
+		if math.Float64bits(c.lit) != math.Float64bits(c.want) {
+			t.Errorf("%s literal %v, run-time %v", c.name, c.lit, c.want)
+		}
+	}
+}
+
+// TestGearTable regenerates the gear ratio literals: gear 1 fixed, gear 8 per
+// setting, geometric in between.
+func TestGearTable(t *testing.T) {
+	first := 3.0
+	first *= 5.39
+	tops := []float64{6.13, 5.75, 5.39, 5.05, 4.75}
+	for s, top := range tops {
+		step := math.Pow(top/first, 1.0/7)
+		for g := range 8 {
+			if want := first * math.Pow(step, float64(g)); math.Float64bits(gearTable[s][g]) != math.Float64bits(want) {
+				t.Errorf("gearing %d gear %d: literal %v, formula %v", s+1, g+1, gearTable[s][g], want)
+			}
+		}
 	}
 }
 
