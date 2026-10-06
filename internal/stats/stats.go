@@ -1,6 +1,6 @@
 // Package stats is Pitlane's schema on roomkit/ledger: per pilot races,
 // wins, podiums, laps and the best valid lap per track, all-time and for the
-// current ISO week.
+// current ISO week. Best laps are keyed by track and handling ("kiyi-arcade").
 package stats
 
 import (
@@ -19,7 +19,7 @@ type Delta struct {
 	Wins    int            `json:"w,omitempty"`
 	Podiums int            `json:"d,omitempty"`
 	Laps    int            `json:"l,omitempty"`
-	BestMs  map[string]int `json:"b,omitempty"` // track → best valid lap, ms
+	BestMs  map[string]int `json:"b,omitempty"` // "track-handling" → best valid lap, ms
 	Week    string         `json:"k,omitempty"` // "2026-W41"; empty = the week of the record time
 }
 

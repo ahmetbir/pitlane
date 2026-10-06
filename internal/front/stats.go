@@ -6,6 +6,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ahmetbir/pitlane/internal/car"
+	"github.com/ahmetbir/pitlane/internal/match"
 	"github.com/ahmetbir/pitlane/internal/stats"
 	"github.com/ahmetbir/roomkit/ledger"
 	"github.com/ahmetbir/roomkit/server"
@@ -13,7 +15,6 @@ import (
 
 const (
 	boardSize = 20
-	trackKey  = "kiyi"
 	periodWk  = "week"
 	periodAll = "all"
 )
@@ -34,8 +35,13 @@ func NewStats(slot *stats.Slot) server.Stats {
 
 func (a statsAPI) Ready() bool { return a.slot.Ready() }
 
+// Boards: wins per period, and the best laps per period and handling (Arcade
+// and Sim laps never share a board).
 func (statsAPI) Boards() []server.BoardID {
-	return []server.BoardID{{Period: periodWk}, {Period: periodAll}, {Period: periodWk, Key: trackKey}, {Period: periodAll, Key: trackKey}}
+	arcade, sim := match.BestKey(car.Arcade), match.BestKey(car.Sim)
+	return []server.BoardID{{Period: periodWk}, {Period: periodAll},
+		{Period: periodWk, Key: arcade}, {Period: periodAll, Key: arcade},
+		{Period: periodWk, Key: sim}, {Period: periodAll, Key: sim}}
 }
 
 type winRow struct {

@@ -42,6 +42,8 @@ type Match struct {
 	lights    protocol.LightsMsg         // latest lights message
 	results   protocol.ResultsMsg        // latest results message
 	info      Info
+	recorded  map[string]bool // pilots recorded for this race
+	bestKey   string          // the best-lap key: track and handling
 }
 
 var _ room.Game[protocol.ClientMsg, protocol.Input, Info] = (*Match)(nil)
@@ -49,7 +51,8 @@ var _ room.Game[protocol.ClientMsg, protocol.Input, Info] = (*Match)(nil)
 // New builds the race (every car a bot). sink nil: nothing is counted.
 func New(s race.Settings, sink StatsSink) *Match {
 	tr := track.Kiyi()
-	m := &Match{r: race.New(s, tr), tr: tr, set: s, stats: sink, in: make(map[race.CarID]car.Input, Seats)}
+	m := &Match{r: race.New(s, tr), tr: tr, set: s, stats: sink, in: make(map[race.CarID]car.Input, Seats),
+		recorded: map[string]bool{}, bestKey: BestKey(s.Handling)}
 	m.info = m.gameInfo()
 	return m
 }
@@ -137,6 +140,7 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	m.syncGrid(out, ev.PhaseChanged && m.r.Phase() == race.Grid)
 	if ev.PhaseChanged && m.r.Phase() == race.Lights {
 		m.lights = protocol.LightsMsg{} // the previous race's lights are not this race's
+		clear(m.recorded)
 	}
 	if ev.Lights > 0 {
 		m.lights = protocol.LightsMsg{T: protocol.TLights, On: ev.Lights}
@@ -149,6 +153,7 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	for _, l := range ev.Laps {
 		out.All(protocol.NewLap(l))
 	}
+	m.record(ev.Finished) // a finish is final: the pilot may leave before Results
 	for _, id := range ev.WingLost {
 		out.All(protocol.NewWing(id))
 	}
@@ -240,26 +245,34 @@ func (m *Match) Info() room.Info[Info] {
 
 func (m *Match) Label() string { return m.set.Handling.String() + "/" + m.set.Contact.String() }
 
-// record counts a finished race for every human with a pilot; bots and
-// pilotless humans never, and a human who left mid-race is a bot again by now.
-// A DNF keeps its laps and best valid lap but is no race, win or podium. A
-// pilot in two seats (two tabs) counts once, by the better position.
+// BestKey is the best-lap key of a room: "kiyi-arcade", "kiyi-sim".
+func BestKey(h car.Handling) string { return trackName + "-" + h.String() }
+
+// record counts the race of every human with a pilot in rows, once per pilot
+// and race: at the flag for a finisher, at Results for the rest. Bots and
+// pilotless humans never count, and a human who left mid-race is a bot again
+// by now. Only what the pilot earned since taking the car over counts (see
+// race.Credit): laps, the best valid lap, and a race, win or podium for a
+// finish after one full lap of their own. A DNF keeps its laps and best lap.
+// A pilot in two seats (two tabs) counts once, by the better position.
 func (m *Match) record(rows []race.ResultRow) {
 	if m.stats == nil {
 		return
 	}
 	best := make(map[string]race.ResultRow, len(rows))
 	for _, r := range rows {
-		if b, ok := best[r.Pilot]; r.Human && r.Pilot != "" && (!ok || r.Pos < b.Pos) {
+		if b, ok := best[r.Pilot]; r.Human && r.Pilot != "" && !m.recorded[r.Pilot] && (!ok || r.Pos < b.Pos) {
 			best[r.Pilot] = r
 		}
 	}
-	for _, r := range rows { // result order, so records are deterministic
+	for _, r := range rows { // row order, so records are deterministic
 		if b, ok := best[r.Pilot]; !ok || b.Car != r.Car {
 			continue
 		}
-		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Laps: r.Laps}
-		if r.Finished {
+		m.recorded[r.Pilot] = true
+		c := r.Credit
+		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Laps: c.Laps}
+		if r.Finished && c.Full {
 			d.Races = 1
 			if r.Pos == 1 {
 				d.Wins = 1
@@ -268,8 +281,8 @@ func (m *Match) record(rows []race.ResultRow) {
 				d.Podiums = 1
 			}
 		}
-		if r.BestMs > 0 {
-			d.BestMs = map[string]int{trackName: r.BestMs}
+		if c.BestMs > 0 {
+			d.BestMs = map[string]int{m.bestKey: c.BestMs}
 		}
 		if d.Races > 0 || d.Laps > 0 || d.BestMs != nil { // a DNF without a lap is nothing
 			m.stats.Record(d)

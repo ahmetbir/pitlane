@@ -86,7 +86,7 @@ func TestStatsEndToEnd(t *testing.T) {
 	wins, podiums, laps := 1, 1, 3
 	slot.Record(stats.Delta{Pilot: pilot.Hash(tok), Name: "Ace", Races: 1, Wins: wins, Podiums: podiums, Laps: laps})
 	// A second pilot with a best lap, so the lap boards have a row.
-	slot.Record(stats.Delta{Pilot: "fast", Name: "Fast", Races: 1, Laps: 3, BestMs: map[string]int{"kiyi": 83000}})
+	slot.Record(stats.Delta{Pilot: "fast", Name: "Fast", Races: 1, Laps: 3, BestMs: map[string]int{"kiyi-arcade": 83000}})
 
 	var me string
 	eventually(t, func() bool {
@@ -107,8 +107,8 @@ func TestStatsEndToEnd(t *testing.T) {
 	eventually(t, func() bool { _, _, ok := slot.Get("fast"); return ok }, "second record")
 
 	week := stats.WeekOf(time.Now())
-	if got, want := getBody(t, ts.URL+"/api/leaderboard?period=all&key=kiyi", ""),
-		`{"period":"all","key":"kiyi","week":"`+week+`","top":[{"name":"Fast","ms":83000}]}`; got != want {
+	if got, want := getBody(t, ts.URL+"/api/leaderboard?period=all&key=kiyi-arcade", ""),
+		`{"period":"all","key":"kiyi-arcade","week":"`+week+`","top":[{"name":"Fast","ms":83000}]}`; got != want {
 		t.Fatalf("\n%s\n%s", got, want)
 	}
 	ace := fmt.Sprintf(`{"name":"Ace","wins":%d,"podiums":%d,"races":1}`, wins, podiums)
