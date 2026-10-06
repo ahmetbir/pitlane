@@ -1,7 +1,8 @@
 // Pitlane's network session: roomkit's Socket with Pitlane's wire and
 // shaping, feeding the own-car predictor and the other cars' interpolation.
-// The race loop calls input() once per 60 Hz tick and reads own() / others()
-// every frame; every other server message is passed on to the screens.
+// The race loop calls input() once per 60 Hz tick, frame(dt) once per
+// animation frame, then reads ownCar() / otherCars(); every server message
+// is passed on to the screens.
 
 import { Socket, type Env, type Join, type Quick, type Status } from "roomkit/net/socket";
 import type { ShaperPolicy } from "roomkit/net/shaper";
@@ -9,19 +10,21 @@ import { clampSetup, defaultSetup, parseHandling, type Handling, type Input, typ
 import { Others } from "../predict/others.ts";
 import { Own, type OwnEnv, type OwnState } from "../predict/own.ts";
 import type { Track } from "../track/track.ts";
-import { decodeCar, decodeServer, VERSION, wireInput, type CarRow, type ClientMsg, type Create, type Phase, type ServerMsg } from "./protocol.ts";
+import { damageOf, decodeCar, decodeServer, VERSION, wireInput, type CarRow, type ClientMsg, type Create, type Phase, type ServerMsg } from "./protocol.ts";
 
 export { socketURL, type Status } from "roomkit/net/socket";
 
-/** Least time between two ready/start messages; the newest waiting one is sent. */
-export const GAP_MS = 500;
-
-/** Inputs are newest-only while the connection is backed up (no one-shot presses to carry over). */
+/**
+ * Inputs are newest-only while the connection is backed up (no one-shot
+ * presses to carry over). Nothing is gapped: ready and start go out at once
+ * (the server's ChoiceClass bucket, 2/s burst 4, limits them), so a ready
+ * is never replaced by a later start.
+ */
 export const POLICY: ShaperPolicy<ClientMsg> = {
   isInput: (m) => m.t === "in",
   latch: (_held, m) => m,
-  gapped: (m) => m.t === "ready" || m.t === "start",
-  gapMs: GAP_MS,
+  gapped: () => false,
+  gapMs: 0,
 };
 
 export type SessionHandlers = {
@@ -47,7 +50,9 @@ export class Session {
   private car = 0;      // own car id, 0 before a welcome
   private seated = false; // the own car's first snapshot since the welcome arrived
   private seq = 0;
+  private phase: Phase | null = null; // of the latest snapshot since the welcome
   private env: OwnEnv = { running: false };
+  private drawn: OwnState | null = null; // this frame's own car
 
   constructor(url: string, name: string, entry: Create | Join | Quick, track: Track, h: SessionHandlers, o: SessionOpts = {}) {
     this.h = h;
@@ -85,11 +90,15 @@ export class Session {
     this.own.push(seq, w, this.env);
   }
 
-  /** Submits the garage setup (grid phase); prediction uses it from now on. */
+  /**
+   * Submits the garage setup. Prediction takes it only when it was sent while
+   * the room was on the grid (the server ignores it otherwise).
+   */
   ready(setup: Setup): void {
-    this.setup = clampSetup(setup);
-    this.own.configure(this.handling, this.setup);
-    this.sock.send({ t: "ready", setup: this.setup });
+    const s = clampSetup(setup);
+    if (!this.sock.send({ t: "ready", setup: s }) || this.phase !== "grid") return;
+    this.setup = s;
+    this.own.configure(this.handling, s);
   }
 
   /** Starts the race (room creator, grid phase). */
@@ -101,9 +110,14 @@ export class Session {
     this.sock.send({ t: "chat", id });
   }
 
-  /** The own car as drawn this frame (prediction plus fading correction), null before it is seated. */
-  ownCar(dtS: number): OwnState | null {
-    return this.seated ? this.own.render(dtS) : null;
+  /** Advances the drawn own car by one animation frame of dtS seconds (the correction fades): once per frame. */
+  frame(dtS: number): void {
+    this.drawn = this.seated ? this.own.render(dtS) : null;
+  }
+
+  /** The own car as drawn by the latest frame() (prediction plus fading correction), null before it is seated. */
+  ownCar(): OwnState | null {
+    return this.drawn;
   }
 
   /** The other cars as drawn at this moment, 100 ms behind the server. */
@@ -127,19 +141,31 @@ export class Session {
         // A new server session: its input seqs start over and the car may differ.
         this.car = m.car;
         this.seated = false;
+        this.drawn = null;
         this.seq = 0;
+        this.phase = null;
         this.handling = parseHandling(m.handling)[0];
+        this.setup = clampSetup(m.setup);
         this.own.configure(this.handling, this.setup);
+        this.own.damage(damageOf(m.dmg));
         this.others.clear();
         break;
       case "snap":
         this.snap(m.tick, m.ack, m.phase, m.cars);
+        break;
+      case "dmg":
+        if (m.car === this.car) this.own.damage(damageOf(m));
+        break;
+      case "reset":
+        if (m.car === this.car) this.own.teleported();
+        else this.others.reset(m.car);
         break;
     }
     this.h.onMsg(m);
   }
 
   private snap(tick: number, ack: number, phase: Phase, cars: number[][]): void {
+    this.phase = phase;
     this.env = { running: running(phase) };
     const rows = cars.map(decodeCar);
     const mine = rows.find((r) => r.id === this.car);

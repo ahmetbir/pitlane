@@ -2,7 +2,7 @@
 // documented examples are authoritative). Decoders check shapes only: the
 // server is trusted, a malformed message is dropped instead of crashing a frame.
 
-import { cleanInput, type Input, type Setup } from "../car/car.ts";
+import { cleanInput, type Damage, type Input, type Setup } from "../car/car.ts";
 
 export const VERSION = 1;
 
@@ -48,10 +48,19 @@ export function carInput(w: WireInput): Input {
 
 // Server → client.
 
-/** {"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true} */
+/** A car's damage on the wire: each part ×1000 (0 intact … 1000 broken). */
+export type WireDamage = { fw: number; rw: number; su: number };
+
+/** The car model's damage of a wire damage. */
+export function damageOf(d: WireDamage): Damage {
+  return { frontWing: d.fw / 1000, rearWing: d.rw / 1000, susp: d.su / 1000 };
+}
+
+/** Seats a player; setup and dmg are the seated car's current ones (a takeover or reconnect may differ from the defaults). */
 export type Welcome = {
   t: "welcome"; you: number; code: string; tok?: string;
   car: number; handling: HandlingName; contact: ContactName; laps: number; track: string; creator: boolean;
+  setup: Setup; dmg: WireDamage;
 };
 /** 30 Hz state; cars rows as EncodeCar (decodeCar). clock: race clock ms. */
 export type Snap = { t: "snap"; tick: number; ack: number; phase: Phase; clock: number; cars: number[][] };
@@ -68,11 +77,13 @@ export type Results = { t: "results"; rows: ResultRow[] };
 export type Wing = { t: "wing"; car: number };
 /** The marshals put a stuck car back on the racing line. */
 export type Reset = { t: "reset"; car: number };
+/** A car's damage changed (contact, wall, repaired on the grid). */
+export type Dmg = { t: "dmg"; car: number } & WireDamage;
 export type Notice = { t: "notice"; msg: string; code?: string };
 export type ErrorMsg = { t: "error"; msg: string; code?: string };
 export type Pong = { t: "pong"; ts: number };
 export type ChatMsg = { t: "chat"; from: number; id: number };
-export type ServerMsg = Welcome | Snap | Grid | Lights | Lap | Results | Wing | Reset | Notice | ErrorMsg | Pong | ChatMsg;
+export type ServerMsg = Welcome | Snap | Grid | Lights | Lap | Results | Wing | Reset | Dmg | Notice | ErrorMsg | Pong | ChatMsg;
 
 /** Notice codes (protocol.NoticeCodes) and Pitlane's refusal code. */
 export const NOTICE_CODES = ["not_creator", "not_grid"] as const;
@@ -112,6 +123,7 @@ const bool: Check = (v) => typeof v === "boolean";
 const oneOf = (...xs: string[]): Check => (v) => xs.includes(v as string);
 const row: Check = (v) => Array.isArray(v) && v.length === 11 && v.every(int);
 const listOf = (c: Check): Check => (v) => Array.isArray(v) && v.every(c);
+const setup: Check = (v) => Array.isArray(v) && v.length === 6 && v.every(int);
 const shape = (req: Record<string, Check>, opt: Record<string, Check> = {}): Check => (v) => {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const o = v as Obj;
@@ -120,9 +132,14 @@ const shape = (req: Record<string, Check>, opt: Record<string, Check> = {}): Che
   return true;
 };
 
+const DAMAGE = { fw: int, rw: int, su: int };
+
 const SERVER: Record<ServerMsg["t"], Check> = {
   welcome: shape(
-    { you: int, code: str, car: int, handling: oneOf("arcade", "sim"), contact: oneOf("ghost", "soft", "full"), laps: int, track: str, creator: bool },
+    {
+      you: int, code: str, car: int, handling: oneOf("arcade", "sim"), contact: oneOf("ghost", "soft", "full"), laps: int, track: str, creator: bool,
+      setup, dmg: shape(DAMAGE),
+    },
     { tok: str },
   ),
   snap: shape({ tick: int, ack: int, phase: oneOf("grid", "lights", "racing", "finish", "results"), clock: int, cars: listOf(row) }),
@@ -132,6 +149,7 @@ const SERVER: Record<ServerMsg["t"], Check> = {
   results: shape({ rows: listOf(shape({ pos: int, id: int, name: str, laps: int, total: int, best: int, penalty: int })) }),
   wing: shape({ car: int }),
   reset: shape({ car: int }),
+  dmg: shape({ car: int, ...DAMAGE }),
   notice: shape({ msg: str }, { code: str }),
   error: shape({ msg: str }, { code: str }),
   pong: shape({ ts: num }),

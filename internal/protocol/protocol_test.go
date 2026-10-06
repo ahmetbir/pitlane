@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/race"
 	"github.com/ahmetbir/pitlane/internal/track"
 	"github.com/ahmetbir/roomkit/room"
@@ -101,13 +102,14 @@ func TestSnapWire(t *testing.T) {
 }
 
 func TestMessageWires(t *testing.T) {
-	w := Welcome{Car: 4, Handling: "arcade", Contact: "soft", Laps: 5, Track: "kiyi", Creator: true}
+	w := Welcome{Car: 4, Handling: "arcade", Contact: "soft", Laps: 5, Track: "kiyi", Creator: true, Setup: SetupInts{6, 6, 58, 3, 5, 5}}
 	w.T, w.You, w.Code = "welcome", 7, "K3FQ"
 	for _, c := range []struct {
 		v    any
 		want string
 	}{
-		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true}`},
+		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5],"dmg":{"fw":0,"rw":0,"su":0}}`},
+		{NewDmg(3, DamageInts{FW: 420, SU: 75}), `{"t":"dmg","car":3,"fw":420,"rw":0,"su":75}`},
 		{LightsMsg{T: TLights, On: 3}, `{"t":"lights","on":3}`},
 		{LightsMsg{T: TLights, Out: 2210}, `{"t":"lights","on":0,"out":2210}`},
 		{NewLap(race.LapEvent{Car: 3, Lap: 2, Ms: 83412, Valid: true, Best: 82950}), `{"t":"lap","car":3,"lap":2,"ms":83412,"valid":true,"best":82950}`},
@@ -197,10 +199,26 @@ func TestDecodeBoundary(t *testing.T) {
 }
 
 func TestWelcomeTok(t *testing.T) {
-	w := NewWelcome(7, "K3FQ", "tok123", 4, "arcade", "soft", 5, "kiyi", true)
+	w := NewWelcome(7, "K3FQ", "tok123", 4, "arcade", "soft", 5, "kiyi", true, car.Setup{3, 8, 62, 2, 7, 4}, car.Damage{FrontWing: 0.42, Susp: 0.0755})
 	b, err := json.Marshal(w)
-	want := `{"t":"welcome","you":7,"code":"K3FQ","tok":"tok123","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true}`
+	want := `{"t":"welcome","you":7,"code":"K3FQ","tok":"tok123","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,` +
+		`"setup":[3,8,62,2,7,4],"dmg":{"fw":420,"rw":0,"su":76}}`
 	if err != nil || string(b) != want {
 		t.Fatalf("%s %v", b, err)
+	}
+}
+
+func TestEncodeDamage(t *testing.T) {
+	for _, c := range []struct {
+		d    car.Damage
+		want DamageInts
+	}{
+		{car.Damage{}, DamageInts{}},
+		{car.Damage{FrontWing: 1, RearWing: 0.0004, Susp: 0.0005}, DamageInts{1000, 0, 1}},
+		{car.Damage{FrontWing: 2, RearWing: -1, Susp: math.NaN()}, DamageInts{1000, 0, 0}},
+	} {
+		if got := EncodeDamage(c.d); got != c.want {
+			t.Errorf("%+v: %+v want %+v", c.d, got, c.want)
+		}
 	}
 }

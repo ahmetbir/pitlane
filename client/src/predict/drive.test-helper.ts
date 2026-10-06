@@ -62,7 +62,8 @@ export type Net = {
   uplink(t: number): number;           // ticks an input sent at t travels
   downlink(t: number): number;         // ticks a snapshot of t travels
   stalled?(t: number): boolean;        // the client sends nothing (tab hidden)
-  server?(t: number, st: State): void; // server-side events (contact, marshal) after its step of t
+  server?(t: number, st: State): void; // server-side events (contact) after its step of t
+  marshal?(t: number, st: State): boolean; // a marshal reset after its step of t: the "reset" message follows that tick's snapshot
 };
 
 export type Trace = {
@@ -84,7 +85,7 @@ export function run(net: Net): Trace {
   own.reset(rowOf(1, server), 0, 0);
   let seq = 0, lastUp = 0, lastDown = 0;
   const up: { at: number; seq: number; w: WireInput }[] = [];
-  const down: { at: number; row: CarRow; ack: number; tick: number }[] = [];
+  const down: { at: number; row?: CarRow; ack: number; tick: number }[] = [];
   const predicted = new Map<number, OwnState>(), truth = new Map<number, State>();
   const tr: Trace = { sentAt: [], err: [], offset: [], drawn: [], pred: [], serverAt: [] };
   for (let t = 1; t <= net.ticks; t++) {
@@ -108,14 +109,20 @@ export function run(net: Net): Trace {
       server.seg = hint.i;
     }
     net.server?.(t, server);
+    const reset = net.marshal?.(t, server) ?? false;
     if (n.fresh) truth.set(sq.ack, { ...server });
     if (t % 2 === 0) {
       lastDown = Math.max(lastDown, t + Math.round(net.downlink(t)));
       down.push({ at: lastDown, row: rowOf(1, server), ack: sq.ack, tick: t });
     }
+    if (reset) {
+      lastDown = Math.max(lastDown, t + Math.round(net.downlink(t)));
+      down.push({ at: lastDown, ack: sq.ack, tick: t });
+    }
     while (down.length && down[0].at <= t) {
       const d = down.shift()!;
-      own.reconcile(d.row, d.ack, d.tick, RUN);
+      if (d.row) own.reconcile(d.row, d.ack, d.tick, RUN);
+      else own.teleported();
     }
     const drawn = own.render(1 / 60);
     const p = own.state();

@@ -38,8 +38,9 @@ type Match struct {
 	grid      [Seats]protocol.GridCar  // last grid sent
 	gridOwner uint8                    // creator in the last grid sent
 	gridSent  bool
-	lights    protocol.LightsMsg  // latest lights message
-	results   protocol.ResultsMsg // latest results message
+	dmg       [Seats]protocol.DamageInts // last damage sent per car (cars start intact)
+	lights    protocol.LightsMsg         // latest lights message
+	results   protocol.ResultsMsg        // latest results message
 	info      Info
 }
 
@@ -67,8 +68,9 @@ func (m *Match) Join(who room.Who) (room.PlayerID, error) {
 
 func (m *Match) Welcome(id room.PlayerID, code, newToken string, out room.Outbox) {
 	cid := race.CarID(id)
+	c := m.r.Cars()[cid-1]
 	out.To(id, protocol.NewWelcome(id, code, newToken, uint8(cid), m.set.Handling.String(), m.set.Contact.String(),
-		m.set.Laps, trackName, m.r.Creator() == cid))
+		m.set.Laps, trackName, m.r.Creator() == cid, c.Driver.Setup, c.St.Dmg))
 	m.syncGrid(out, true) // one grid for everyone, the new player included
 	switch m.r.Phase() {
 	case race.Lights:
@@ -119,15 +121,16 @@ func (m *Match) notice(id room.PlayerID, code, msg string, out room.Outbox) {
 	out.To(id, netproto.NewNotice(code, msg))
 }
 
-// Step runs one tick. Order of sends: snapshot (every SnapEvery ticks), grid
-// (when the roster or a ready flag changed, or the phase became grid),
-// lights, laps, wings, resets, results.
+// Step runs one tick. Order of sends: damage changes, snapshot (every
+// SnapEvery ticks), grid (when the roster or a ready flag changed, or the
+// phase became grid), lights, laps, wings, resets, results.
 func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	clear(m.in)
 	for id, i := range inputs {
 		m.in[race.CarID(id)] = i.Car()
 	}
 	ev := m.r.Step(m.in)
+	m.syncDamage(out)
 	if m.r.Tick()%SnapEvery == 0 {
 		out.Snap(m.snap())
 	}
@@ -189,6 +192,17 @@ func (m *Match) syncGrid(out room.Outbox, force bool) {
 	}
 	m.gridOwner, m.gridSent = owner, true
 	out.All(msg)
+}
+
+// syncDamage broadcasts every car whose wire damage differs from the last
+// one sent; the comparison allocates nothing.
+func (m *Match) syncDamage(out room.Outbox) {
+	for i, c := range m.r.Cars() {
+		if d := protocol.EncodeDamage(c.St.Dmg); d != m.dmg[i] {
+			m.dmg[i] = d
+			out.All(protocol.NewDmg(c.ID, d))
+		}
+	}
 }
 
 func (m *Match) snap() protocol.Snap {

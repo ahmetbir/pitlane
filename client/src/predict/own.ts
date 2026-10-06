@@ -1,6 +1,8 @@
 // Client-side prediction of the own car: roomkit's Reconciler over the car
 // model plus the barrier (race/world.ts moveCar). The server's other contact
-// (cars, kerbs it resolves after moveCar) arrives only as corrections.
+// (cars, kerbs it resolves after moveCar) arrives only as corrections; its
+// damage arrives as the welcome's and "dmg" messages (×1000, so Params are
+// within 0.05 % of the server's).
 //
 // A snapshot row carries less than car.State: hx, hz are rebuilt from h; ax
 // and rpm are kept from the prediction (rpm is recomputed by the next step,
@@ -29,7 +31,6 @@ export type OwnState = State & { seg: number };
 /** What a step needs from the room: whether cars move (lights, racing, finish). */
 export type OwnEnv = { running: boolean };
 
-const WING_LOST: Damage = { frontWing: 1, rearWing: 0, susp: 0 };
 const INTACT: Damage = { frontWing: 0, rearWing: 0, susp: 0 };
 
 /** a − b wrapped to (−π, π]. */
@@ -76,29 +77,48 @@ export class Own {
   private readonly track: Track;
   private handling: Handling;
   private setup: Setup;
-  private wingLost = false;
+  private dmg: Damage = { ...INTACT };
   private params: Params;
+  private hard = false; // the next reconcile is drawn at once (marshal reset)
+  private readonly smoother = new CarSmoother();
   private readonly r: Reconciler<OwnState, WireInput, OwnEnv>;
 
   constructor(track: Track, handling: Handling, setup: Setup) {
     this.track = track;
     this.handling = handling;
     this.setup = setup;
-    this.params = newParams(handling, setup, INTACT);
+    this.params = newParams(handling, setup, this.dmg);
     const model: Model<OwnState, WireInput, OwnEnv> = { step: (s, w, env) => this.step(s, w, env) };
-    this.r = new Reconciler(model, new CarSmoother(), blank());
+    this.r = new Reconciler(model, this.smoother, blank());
   }
 
-  /** Room handling (welcome) and the setup the server holds for this car (last ready). */
+  /** Room handling and the setup the server holds for this car (welcome, then each accepted ready). */
   configure(handling: Handling, setup: Setup): void {
     this.handling = handling;
     this.setup = setup;
     this.rebuild();
   }
 
+  /** The car's damage as the server holds it (welcome, "dmg"). */
+  damage(d: Damage): void {
+    if (d.frontWing === this.dmg.frontWing && d.rearWing === this.dmg.rearWing && d.susp === this.dmg.susp) return;
+    this.dmg = { ...d };
+    this.rebuild();
+  }
+
+  /**
+   * The server moved the car (marshal reset): the correction in progress and
+   * the next one are drawn at once instead of fading. The reset message may
+   * arrive after the snapshot that carries the new pose, or before it.
+   */
+  teleported(): void {
+    this.smoother.reset();
+    this.hard = true;
+  }
+
   /** Hard reset on the first snapshot of a seat: no smoothing, no pending inputs. */
   reset(row: CarRow, tick: number, ack: number): void {
-    this.damage(row.wingLost);
+    this.hard = false;
     this.r.reset(this.fromRow(row, blank()), tick, ack);
   }
 
@@ -109,8 +129,11 @@ export class Own {
 
   /** Rebases prediction on the server's row of tick, on which it applied input ack. */
   reconcile(row: CarRow, ack: number, tick: number, env: OwnEnv): void {
-    this.damage(row.wingLost);
     this.r.reconcile(this.fromRow(row, this.r.state()), ack, tick, env);
+    if (this.hard) {
+      this.smoother.reset();
+      this.hard = false;
+    }
   }
 
   /** Predicted physics state. */
@@ -118,7 +141,7 @@ export class Own {
     return this.r.state();
   }
 
-  /** Physics state plus the fading visual correction; dtS = frame time. */
+  /** Physics state plus the fading visual correction; dtS = frame time. Decays the correction: call once per frame. */
   render(dtS: number): OwnState {
     return this.r.render(dtS);
   }
@@ -145,7 +168,7 @@ export class Own {
       x: row.x, z: row.z, h, hx: Math.cos(h), hz: Math.sin(h),
       vx: row.vx, vy: row.vy, r: row.r, delta: row.delta,
       rpm: like.rpm, gear: this.gearAt(sv, like.gear), ax: like.ax,
-      dmg: { ...(row.wingLost ? WING_LOST : INTACT) },
+      dmg: { ...this.dmg },
       seg: this.track.locate(row.x, row.z, like.seg).i,
     };
   }
@@ -162,13 +185,7 @@ export class Own {
     return g;
   }
 
-  private damage(lost: boolean): void {
-    if (lost === this.wingLost) return;
-    this.wingLost = lost;
-    this.rebuild();
-  }
-
   private rebuild(): void {
-    this.params = newParams(this.handling, this.setup, this.wingLost ? WING_LOST : INTACT);
+    this.params = newParams(this.handling, this.setup, this.dmg);
   }
 }

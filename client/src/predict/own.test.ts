@@ -111,18 +111,44 @@ test("random driving into the barriers with random contact never yields NaN", ()
   assert.ok(finite(tr));
 });
 
-test("a lost front wing in a snapshot predicts with Damage{frontWing: 1}", () => {
+test("the server's damage predicts with its Params", () => {
   const s0 = startState(300, 40);
-  const lost = { ...rowOf(1, s0), wingLost: true };
+  const dmg = { frontWing: 0.75, rearWing: 0.2, susp: 0.1 };
   const own = new Own(track, HANDLING, SETUP);
-  own.reset(lost, 0, 0);
+  own.damage(dmg);
+  own.reset(rowOf(1, s0), 0, 0);
   const from = own.state();
-  assert.deepEqual(from.dmg, { frontWing: 1, rearWing: 0, susp: 0 });
+  assert.deepEqual(from.dmg, dmg);
   own.push(1, { th: 100, br: 0, st: 60 }, { running: true });
   const want = { ...from, dmg: { ...from.dmg } };
   const hint = { i: from.seg };
-  moveCar(want, newParams(HANDLING, SETUP, { frontWing: 1, rearWing: 0, susp: 0 }), { throttle: 1, brake: 0, steer: 60 / 127 }, track, hint);
+  moveCar(want, newParams(HANDLING, SETUP, dmg), { throttle: 1, brake: 0, steer: 60 / 127 }, track, hint);
   assert.deepEqual(own.state(), { ...want, seg: hint.i });
+  const intact = new Own(track, HANDLING, SETUP);
+  intact.reset(rowOf(1, s0), 0, 0);
+  intact.push(1, { th: 100, br: 0, st: 60 }, { running: true });
+  assert.notDeepEqual(intact.state().vx, own.state().vx);
+});
+
+test("a marshal reset under 8 m is drawn at once, whichever comes first: its snapshot or its message", () => {
+  for (const at of [400, 401]) { // even: the snapshot of that tick carries the move; odd: the next one
+    for (const seed of [1, 2]) {
+      const tr = run({
+        ticks: 900, uplink: jitter(seed), downlink: jitter(seed + 100),
+        marshal: (t, s) => {
+          if (t !== at) return false;
+          const [x, z] = track.point(track.locate(s.x, s.z, -1).s + 3, 4); // 3 m on, 4 m to the side: about 5 m
+          Object.assign(s, { x, z, vx: 0, vy: 0, r: 0, delta: 0 });
+          return true;
+        },
+      });
+      const moved = tr.pred.findIndex((p, t) => t > at && p && Math.hypot(p.x - tr.pred[t - 1].x, p.z - tr.pred[t - 1].z) > 2);
+      assert.ok(moved > at, `at ${at} seed ${seed}: the reset never reached the prediction`);
+      // The message travels with (right after, or right before) the snapshot of the move: drawn = physics from that frame on.
+      for (let t = moved; t < moved + 30; t++) assert.ok(tr.offset[t] < QUANT_M, `at ${at} seed ${seed} t ${t}: drawn ${tr.offset[t].toFixed(3)} m off`);
+      assert.ok(finite(tr));
+    }
+  }
 });
 
 test("cars do not move while the room is not running (grid, results)", () => {

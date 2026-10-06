@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { carInput, decodeCar, decodeServer, VERSION, wireInput, type Snap } from "./protocol.ts";
+import { carInput, damageOf, decodeCar, decodeServer, VERSION, wireInput, type Dmg, type Snap, type Welcome } from "./protocol.ts";
 
 // The documented one-line examples of internal/protocol/server.go, read from the Go source.
 const goExamples = (): string[] => {
@@ -15,7 +15,7 @@ test("version is 1", () => {
 
 test("every documented server example decodes", () => {
   const ex = goExamples();
-  assert.deepEqual(ex.map((l) => JSON.parse(l).t), ["welcome", "snap", "grid", "lights", "lights", "lap", "results", "wing", "reset"]);
+  assert.deepEqual(ex.map((l) => JSON.parse(l).t), ["welcome", "dmg", "snap", "grid", "lights", "lights", "lap", "results", "wing", "reset"]);
   for (const l of ex) assert.ok(decodeServer(JSON.parse(l)), l);
 });
 
@@ -30,7 +30,7 @@ test("the core's messages decode", () => {
 });
 
 test("the snapshot example's row decodes to SI units", () => {
-  const snap = decodeServer(JSON.parse(goExamples()[1])) as Snap;
+  const snap = decodeServer(JSON.parse(goExamples().find((l) => l.startsWith(`{"t":"snap"`))!)) as Snap;
   assert.equal(snap.clock, 41200);
   const c = decodeCar(snap.cars[0]);
   assert.deepEqual(c, {
@@ -42,13 +42,24 @@ test("the snapshot example's row decodes to SI units", () => {
   assert.deepEqual([f.bot, f.finished, f.wingLost, f.offTrack], [true, true, true, true]);
 });
 
+test("the welcome carries the car's setup and damage; dmg converts to the car model's damage", () => {
+  const ex = goExamples();
+  const w = decodeServer(JSON.parse(ex.find((l) => l.startsWith(`{"t":"welcome"`))!)) as Welcome;
+  assert.deepEqual([w.setup, w.dmg], [[6, 6, 58, 3, 5, 5], { fw: 0, rw: 0, su: 0 }]);
+  const d = decodeServer(JSON.parse(ex.find((l) => l.startsWith(`{"t":"dmg"`))!)) as Dmg;
+  assert.deepEqual(damageOf(d), { frontWing: 0.42, rearWing: 0, susp: 0.075 });
+});
+
 test("malformed messages are dropped", () => {
   for (const m of [
     null, 3, "snap", [], {}, { t: "nope" }, { t: "toString" },
     { t: "snap", tick: 1, ack: 0, phase: "racing", clock: 0, cars: [[1, 2, 3]] },
     { t: "snap", tick: 1, ack: 0, phase: "warmup", clock: 0, cars: [] },
     { t: "snap", tick: 1.5, ack: 0, phase: "racing", clock: 0, cars: [] },
-    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "drift", contact: "soft", laps: 5, track: "kiyi", creator: true },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "drift", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5], dmg: { fw: 0, rw: 0, su: 0 } },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58], dmg: { fw: 0, rw: 0, su: 0 } },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5] },
+    { t: "dmg", car: 1, fw: 0.5, rw: 0, su: 0 },
     { t: "lights", on: 0, out: "x" },
     { t: "lap", car: 1, lap: 1, ms: 1, valid: 1, best: 0 },
     { t: "pong", ts: null },

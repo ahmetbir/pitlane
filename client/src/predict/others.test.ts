@@ -91,3 +91,44 @@ test("cars missing from a snapshot are dropped; clear forgets everything", () =>
   o.clear();
   assert.deepEqual(o.sample(1000), []);
 });
+
+/**
+ * A car standing at x = 0 is reset by the marshals at tick `at` to x = 4,
+ * standing again. Snapshots every 2 ticks and the reset message (right after
+ * the snapshot of its tick) arrive after `delay` ms. Returns the drawn x per frame.
+ */
+function marshal(at: number, delay: (t: number) => number): number[] {
+  const o = new Others();
+  const inFlight: { at: number; tick?: number; reset?: boolean }[] = [];
+  let last = 0;
+  const drawn: number[] = [];
+  const x = (t: number) => (t >= at ? 4 : 0);
+  for (let t = 1; t <= 300; t++) {
+    if (t % 2 === 0) {
+      last = Math.max(last, t * TICK_MS + delay(t));
+      inFlight.push({ at: last, tick: t });
+    }
+    if (t === at) inFlight.push({ at: last = Math.max(last, t * TICK_MS + delay(t)), reset: true });
+    const now = t * TICK_MS;
+    while (inFlight.length && inFlight[0].at <= now) {
+      const m = inFlight.shift()!;
+      if (m.reset) o.reset(2);
+      else o.push(m.tick!, [{ ...row(2, x(m.tick!)), vx: 0 }], m.at);
+    }
+    drawn[t] = o.sample(now)[0]?.x ?? NaN;
+  }
+  return drawn;
+}
+
+test("a marshal reset is drawn as a jump, not a slide, under latency and jitter", () => {
+  for (const at of [150, 151]) { // even: the newest snapshot carries the move; odd: the next one does
+    for (const seed of [1, 2, 3]) {
+      const r = rng(seed);
+      const drawn = marshal(at, () => 100 + (r() * 2 - 1) * 40);
+      for (let t = 2; t <= 300; t++) {
+        assert.ok(drawn[t] === 0 || drawn[t] === 4 || (t < 20 && Number.isNaN(drawn[t])), `at ${at} seed ${seed} t ${t}: drawn at ${drawn[t]} (slid)`);
+      }
+      assert.equal(drawn[300], 4);
+    }
+  }
+});

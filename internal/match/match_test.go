@@ -434,3 +434,84 @@ func TestStepAllocs(t *testing.T) {
 		t.Fatalf("%v allocs per unchanged grid check and input conversion", n)
 	}
 }
+
+// crash points the human car 30° at the left wall at 30 m/s on a clear stretch.
+func crash(m *Match, id room.PlayerID) *race.Car {
+	c := m.r.Cars()[id-1]
+	g := m.tr.Segs[50]
+	x, z := m.tr.Point(g.S, 0)
+	h := math.Atan2(g.TZ, g.TX) + math.Pi/6
+	c.St = car.State{X: x, Z: z, H: h, HX: math.Cos(h), HZ: math.Sin(h), VX: 30, Gear: 6, RPM: 11000}
+	c.Seg, _, _ = m.tr.Locate(x, z, -1)
+	return c
+}
+
+func TestFullContactHitSendsDamage(t *testing.T) {
+	for _, mode := range []race.Contact{race.Soft, race.Full} {
+		m, out := New(race.Settings{Handling: car.Arcade, Contact: mode, Laps: 3, Seed: 7}, nil), &fakeOut{}
+		a := join(t, m, out, "Ace")
+		m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+		run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+		c := crash(m, a)
+		out.take()
+		var mine []protocol.DmgMsg
+		for i := 0; i < 120; i++ {
+			m.Step(map[room.PlayerID]protocol.Input{a: {}}, out)
+			for _, s := range out.take() {
+				if d, ok := s.msg.(protocol.DmgMsg); ok && d.Car == uint8(a) {
+					if s.to != 0 {
+						t.Fatalf("dmg sent to %d only", s.to)
+					}
+					mine = append(mine, d)
+				}
+			}
+		}
+		if mode == race.Soft {
+			if len(mine) != 0 || c.St.Dmg != (car.Damage{}) {
+				t.Fatalf("soft: %+v %+v", mine, c.St.Dmg)
+			}
+			continue
+		}
+		if len(mine) == 0 {
+			t.Fatalf("full: no dmg message, damage %+v", c.St.Dmg)
+		}
+		last := mine[len(mine)-1]
+		if last != protocol.NewDmg(c.ID, protocol.EncodeDamage(c.St.Dmg)) || last.FW == 0 {
+			t.Fatalf("full: last %+v, car %+v", last, c.St.Dmg)
+		}
+		for i := 1; i < len(mine); i++ {
+			if mine[i].DamageInts == mine[i-1].DamageInts {
+				t.Fatalf("unchanged damage resent: %+v", mine)
+			}
+		}
+	}
+}
+
+func TestWelcomeCarriesSetupAndDamage(t *testing.T) {
+	m, out := New(race.Settings{Handling: car.Arcade, Contact: race.Full, Laps: 3, Seed: 7}, nil), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{3, 8, 62, 2, 7, 4}}, out)
+	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+	c := crash(m, a)
+	run(m, out, 120, func() bool { return c.St.Dmg != (car.Damage{}) })
+	m.Leave(a) // the car runs on as a bot with its setup and damage
+	out.take()
+	b := join(t, m, out, "Late")
+	ws := of[protocol.Welcome](out.take())
+	if b != a || len(ws) != 1 {
+		t.Fatalf("seat %d (was %d), welcomes %d", b, a, len(ws))
+	}
+	if ws[0].Setup != (protocol.SetupInts{3, 8, 62, 2, 7, 4}) || ws[0].Dmg != protocol.EncodeDamage(c.St.Dmg) || ws[0].Dmg == (protocol.DamageInts{}) {
+		t.Fatalf("welcome %+v, car damage %+v", ws[0], c.St.Dmg)
+	}
+}
+
+func TestDamageCheckAllocs(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	join(t, m, out, "Ace")
+	m.Step(nil, out)
+	out.take()
+	if n := testing.AllocsPerRun(50, func() { m.syncDamage(out) }); n != 0 {
+		t.Fatalf("%v allocs per unchanged damage check", n)
+	}
+}

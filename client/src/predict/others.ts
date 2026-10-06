@@ -1,7 +1,8 @@
 // Other cars: snapshot rows drawn 100 ms behind the server through roomkit's
 // InterpBuffer: positions and velocities lerped, heading along the shortest
-// arc, discrete fields (lap, flags) from the nearer snapshot; a teleport
-// (marshal reset, back to the grid) is drawn as one.
+// arc, discrete fields (lap, flags) from the nearer snapshot. A teleport is
+// drawn as one: any move above 8 m between snapshots (back to the grid), and
+// a marshal reset ("reset" message), whose move may be short.
 
 import { InterpBuffer, ServerClock } from "roomkit/predict/interp";
 import type { CarRow } from "../net/protocol.ts";
@@ -9,7 +10,9 @@ import { angleDiff } from "./own.ts";
 
 export const INTERP_DELAY_MS = 100;
 const TICK_MS = 1000 / 60;
-const JUMP_M = 8; // a move this long between snapshots (marshal reset, regrid) is not slid along
+const JUMP_M = 8;  // a move this long between snapshots is never slid along
+const CUT_M = 0.5; // a reset car stood still (< 1 m/s), so a move this long between its snapshots is the reset
+const CUT_WAIT = 3; // snapshots a reset waits for its move to show up
 
 /** Blends two rows of one car; u in [0, 1]. */
 export function mixRow(a: CarRow, b: CarRow, u: number): CarRow {
@@ -23,9 +26,48 @@ export function mixRow(a: CarRow, b: CarRow, u: number): CarRow {
   };
 }
 
+const apart = (a: CarRow, b: CarRow): number => Math.hypot(b.x - a.x, b.z - a.z);
+
+/** One car's buffer and its last two snapshots (to find a reset's move). */
+class Car {
+  buf = new InterpBuffer<CarRow>(mixRow);
+  prev: CarRow | null = null;
+  last: CarRow | null = null;
+  lastT = 0;
+  cut = 0; // snapshots left in which a reset's move is looked for
+
+  push(t: number, row: CarRow): void {
+    if (this.last && t <= this.lastT) return;
+    this.prev = this.last;
+    this.last = row;
+    this.lastT = t;
+    this.buf.push(t, row);
+    if (this.cut > 0) {
+      this.cut--;
+      if (this.prev && apart(this.prev, row) > CUT_M) this.restart();
+    }
+  }
+
+  /** The server reset this car: the snapshot with the new pose is the newest one or one of the next. */
+  reset(): void {
+    if (this.prev && this.last && apart(this.prev, this.last) > CUT_M) {
+      this.restart();
+      return;
+    }
+    this.cut = CUT_WAIT;
+  }
+
+  /** Drops every snapshot before the newest: nothing is lerped across the move. */
+  private restart(): void {
+    this.cut = 0;
+    this.buf = new InterpBuffer<CarRow>(mixRow);
+    this.buf.push(this.lastT, this.last!);
+  }
+}
+
 export class Others {
   private clock = new ServerClock(TICK_MS, INTERP_DELAY_MS);
-  private readonly bufs = new Map<number, InterpBuffer<CarRow>>();
+  private readonly cars = new Map<number, Car>();
 
   /** A snapshot of tick received at local nowMs: rows of every car but the own one. */
   push(tick: number, rows: readonly CarRow[], nowMs: number): void {
@@ -34,22 +76,27 @@ export class Others {
     const seen = new Set<number>();
     for (const row of rows) {
       seen.add(row.id);
-      let b = this.bufs.get(row.id);
-      if (!b) {
-        b = new InterpBuffer<CarRow>(mixRow);
-        this.bufs.set(row.id, b);
+      let c = this.cars.get(row.id);
+      if (!c) {
+        c = new Car();
+        this.cars.set(row.id, c);
       }
-      b.push(t, row);
+      c.push(t, row);
     }
-    for (const id of this.bufs.keys()) if (!seen.has(id)) this.bufs.delete(id);
+    for (const id of this.cars.keys()) if (!seen.has(id)) this.cars.delete(id);
+  }
+
+  /** The marshals moved car id ("reset"): it is drawn at its new pose without sliding there. */
+  reset(id: number): void {
+    this.cars.get(id)?.reset();
   }
 
   /** Every car as drawn at local nowMs, by id. */
   sample(nowMs: number): CarRow[] {
     const at = this.clock.renderTime(nowMs);
     const out: CarRow[] = [];
-    for (const b of this.bufs.values()) {
-      const s = b.sample(at);
+    for (const c of this.cars.values()) {
+      const s = c.buf.sample(at);
       if (s) out.push(s);
     }
     return out.sort((p, q) => p.id - q.id);
@@ -57,7 +104,7 @@ export class Others {
 
   /** Forgets every car and the clock (a new seat; after an update the ticks restart). */
   clear(): void {
-    this.bufs.clear();
+    this.cars.clear();
     this.clock = new ServerClock(TICK_MS, INTERP_DELAY_MS);
   }
 }

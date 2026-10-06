@@ -3,6 +3,7 @@ package protocol
 import (
 	"math"
 
+	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/race"
 	"github.com/ahmetbir/pitlane/internal/track"
 	"github.com/ahmetbir/roomkit/netproto"
@@ -12,28 +13,61 @@ import (
 // is written from these; field names are fixed by wire v1).
 
 // NewWelcome builds the welcome of a player; tok is set only when a pilot
-// token was just issued.
-func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, contact string, laps int, trackName string, creator bool) Welcome {
+// token was just issued. setup and dmg are the seated car's current ones.
+func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, contact string, laps int, trackName string, creator bool,
+	setup car.Setup, dmg car.Damage) Welcome {
 	return Welcome{
 		Welcome: netproto.Welcome{T: netproto.TWelcome, You: you, Code: code, Tok: tok},
 		Car:     carID, Handling: handling, Contact: contact, Laps: laps, Track: trackName, Creator: creator,
+		Setup: SetupInts(setup), Dmg: EncodeDamage(dmg),
 	}
 }
 
 // Welcome seats a player: the roomkit envelope (t, you, code, tok) flat
-// beside the room settings.
+// beside the room settings and the car's current setup and damage (a
+// takeover or a reconnect may seat a car that already has both).
 //
-//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true}
+//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5],"dmg":{"fw":0,"rw":0,"su":0}}
 //
 // tok appears only when a pilot token was just issued.
 type Welcome struct {
 	netproto.Welcome
-	Car      uint8  `json:"car"`      // your car id 1..10
-	Handling string `json:"handling"` // arcade|sim
-	Contact  string `json:"contact"`  // ghost|soft|full
-	Laps     int    `json:"laps"`
-	Track    string `json:"track"`
-	Creator  bool   `json:"creator"` // may press start
+	Car      uint8      `json:"car"`      // your car id 1..10
+	Handling string     `json:"handling"` // arcade|sim
+	Contact  string     `json:"contact"`  // ghost|soft|full
+	Laps     int        `json:"laps"`
+	Track    string     `json:"track"`
+	Creator  bool       `json:"creator"` // may press start
+	Setup    SetupInts  `json:"setup"`   // the car's setup [fw, rw, bb, gear, diff, susp]
+	Dmg      DamageInts `json:"dmg"`     // the car's damage
+}
+
+// DamageInts is a car's damage on the wire: each part ×1000 (0 intact … 1000 broken).
+type DamageInts struct {
+	FW int `json:"fw"` // front wing
+	RW int `json:"rw"` // rear wing
+	SU int `json:"su"` // suspension
+}
+
+// EncodeDamage quantises d to the wire (parts outside 0..1 saturate, NaN is 0).
+func EncodeDamage(d car.Damage) DamageInts {
+	p := func(v float64) int { return int(q(math.Min(math.Max(v, 0), 1), 1000)) }
+	return DamageInts{FW: p(d.FrontWing), RW: p(d.RearWing), SU: p(d.Susp)}
+}
+
+// DmgMsg: a car's damage changed (contact, wall, or repaired on the grid);
+// not evictable. Sent to everyone; the owner's client rebuilds its model.
+//
+//	{"t":"dmg","car":3,"fw":420,"rw":0,"su":75}
+type DmgMsg struct {
+	T   string `json:"t"` // "dmg"
+	Car uint8  `json:"car"`
+	DamageInts
+}
+
+// NewDmg builds the damage message of a car.
+func NewDmg(id race.CarID, d DamageInts) DmgMsg {
+	return DmgMsg{T: TDmg, Car: uint8(id), DamageInts: d}
 }
 
 // Snap is the 30 Hz state; evictable. cars rows are
