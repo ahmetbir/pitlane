@@ -1,0 +1,12 @@
+# Runtime-only image around a prebuilt static binary (scripts/release.sh),
+# built on the server, which has too little disk for the toolchain stages.
+# gcr.io/distroless/static-debian12:nonroot (multi-arch index digest, re-checked current 2026-10-06)
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+# --chmod: the binary arrives by scp with whatever bits the remote umask left.
+COPY --chmod=0755 dist/pitlane-linux-arm64 /pitlane
+# /data owned by the runtime user (mode 0755; the server chmods it 0700 at start); a fresh
+# named volume copies this ownership on first mount.
+COPY --from=gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab --chown=65532:65532 /home/nonroot /data
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/pitlane"]
