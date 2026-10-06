@@ -90,7 +90,7 @@ func TestWelcomeSendsGridAndTok(t *testing.T) {
 	m.Welcome(id, "ABCD", "tok", out)
 	ss := out.take()
 	w, g := of[protocol.Welcome](ss), of[protocol.GridMsg](ss)
-	if len(w) != 1 || w[0].Tok != "tok" || len(g) != 1 || len(g[0].Cars) != 10 || g[0].Cars[0].Name != "Ace" || g[0].Cars[0].Bot {
+	if len(w) != 1 || w[0].Tok != "tok" || len(g) != 1 || len(g[0].Cars) != 10 || g[0].Cars[0].Name != "Ace" || g[0].Cars[0].Bot || g[0].Creator != 1 {
 		t.Fatalf("%+v %+v", w, g)
 	}
 }
@@ -159,8 +159,8 @@ func TestFullFlow(t *testing.T) {
 	var on []int
 	for _, l := range of[protocol.LightsMsg](ss) {
 		on = append(on, l.On)
-		if l.On == 0 && l.Out != m.raceStart {
-			t.Fatalf("lights out at %d, race start %d", l.Out, m.raceStart)
+		if l.On == 0 && l.Out != m.r.RaceStart() {
+			t.Fatalf("lights out at %d, race start %d", l.Out, m.r.RaceStart())
 		}
 	}
 	if len(on) != 6 || on[0] != 1 || on[4] != 5 || on[5] != 0 {
@@ -303,5 +303,109 @@ func TestResetBroadcast(t *testing.T) {
 	}
 	if len(resets) == 0 || resets[0] != (protocol.ResetMsg{T: protocol.TReset, Car: uint8(a)}) {
 		t.Fatalf("resets %+v", resets)
+	}
+}
+
+func TestJoinSendsOneGrid(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	join(t, m, out, "Ace")
+	out.take()
+	join(t, m, out, "Bee")
+	m.Step(nil, out)
+	gs := of[protocol.GridMsg](out.take())
+	if len(gs) != 1 || gs[0].Cars[1].Name != "Bee" {
+		t.Fatalf("%+v", gs)
+	}
+}
+
+func TestCreatorHandoverReachesClients(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	join(t, m, out, "Bee")
+	m.Step(nil, out)
+	out.take()
+	m.Leave(a)
+	m.Step(nil, out)
+	gs := of[protocol.GridMsg](out.take())
+	if len(gs) != 1 || gs[0].Creator != 2 || !gs[0].Cars[0].Bot || gs[0].Cars[1].Bot {
+		t.Fatalf("%+v", gs)
+	}
+	m.Step(nil, out)
+	if gs = of[protocol.GridMsg](out.take()); len(gs) != 0 {
+		t.Fatalf("duplicate %+v", gs)
+	}
+}
+
+func TestFullGridRoomIsErrFullNotRefusal(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	for i := 0; i < 10; i++ {
+		join(t, m, out, "P")
+	}
+	_, err := m.Join(room.Who{Name: "X"})
+	var ref *room.Refusal
+	if !errors.Is(err, room.ErrFull) || errors.As(err, &ref) {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestLateJoinerGetsLightsAndResults(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Lights && m.lights.On == 3 })
+	out.take()
+	id, err := m.Join(room.Who{Name: "Bee"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Welcome(id, "ABCD", "", out)
+	ls := of[protocol.LightsMsg](out.take())
+	if len(ls) != 1 || ls[0].On != 3 {
+		t.Fatalf("lights %+v", ls)
+	}
+	m.Leave(id)
+	m.Leave(a)
+	run(m, out, 600*60, func() bool { return m.r.Phase() == race.Results })
+	id, _ = m.Join(room.Who{Name: "Cy"})
+	out.take()
+	m.Welcome(id, "ABCD", "", out)
+	rs := of[protocol.ResultsMsg](out.take())
+	if len(rs) != 1 || len(rs[0].Rows) != 10 {
+		t.Fatalf("results %+v", rs)
+	}
+}
+
+func TestInfoLapAndChanged(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	if m.Info().Game.Lap != 0 {
+		t.Fatal("grid lap")
+	}
+	m.Step(nil, out)
+	if out.changed != 0 {
+		t.Fatalf("join alone must not call Changed (the room republishes): %d", out.changed)
+	}
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+	if out.changed == 0 || m.Info().Game.Lap != 1 {
+		t.Fatalf("changed %d info %+v", out.changed, m.Info().Game)
+	}
+}
+
+func TestStepAllocs(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	m.Step(nil, out)
+	in := map[room.PlayerID]protocol.Input{a: {}}
+	out.take()
+	n := testing.AllocsPerRun(50, func() {
+		m.syncGrid(out, false)
+		clear(m.in)
+		for id, i := range in {
+			m.in[race.CarID(id)] = i.Car()
+		}
+	})
+	if n != 0 {
+		t.Fatalf("%v allocs per unchanged grid check and input conversion", n)
 	}
 }

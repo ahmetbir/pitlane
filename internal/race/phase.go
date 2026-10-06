@@ -47,8 +47,11 @@ func (p Phase) String() string {
 	return "grid"
 }
 
+// TickRate is the simulation rate in ticks per second.
+const TickRate = 60
+
 const (
-	tps             = 60
+	tps             = TickRate
 	botGridTicks    = 10 * tps
 	humanGridTicks  = 30 * tps
 	lightTicks      = 1 * tps

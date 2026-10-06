@@ -4,7 +4,7 @@
 package match
 
 import (
-	"slices"
+	"fmt"
 
 	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/protocol"
@@ -20,7 +20,6 @@ const (
 	// SnapEvery is the number of ticks between snapshots (60 Hz → 30 Hz).
 	SnapEvery = 2
 
-	tickRate  = 60
 	trackName = "kiyi"
 )
 
@@ -35,10 +34,13 @@ type Match struct {
 	set       race.Settings
 	stats     StatsSink
 	humans    int
-	raceStart int // tick of lights out
-	grid      []protocol.GridCar
+	in        map[race.CarID]car.Input // reused every tick
+	grid      [Seats]protocol.GridCar  // last grid sent
+	gridOwner uint8                    // creator in the last grid sent
+	gridSent  bool
+	lights    protocol.LightsMsg  // latest lights message
+	results   protocol.ResultsMsg // latest results message
 	info      Info
-	infoHuman int
 }
 
 var _ room.Game[protocol.ClientMsg, protocol.Input, Info] = (*Match)(nil)
@@ -46,15 +48,18 @@ var _ room.Game[protocol.ClientMsg, protocol.Input, Info] = (*Match)(nil)
 // New builds the race (every car a bot). sink nil: nothing is counted.
 func New(s race.Settings, sink StatsSink) *Match {
 	tr := track.Kiyi()
-	m := &Match{r: race.New(s, tr), tr: tr, set: s, stats: sink}
-	m.info, m.infoHuman = m.gameInfo(), 0
+	m := &Match{r: race.New(s, tr), tr: tr, set: s, stats: sink, in: make(map[race.CarID]car.Input, Seats)}
+	m.info = m.gameInfo()
 	return m
 }
 
 func (m *Match) Join(who room.Who) (room.PlayerID, error) {
 	id, ok := m.r.Seat(who.Name, who.Pilot)
 	if !ok {
-		return 0, room.Refuse(protocol.CodeRacing)
+		if p := m.r.Phase(); p == race.Lights || p == race.Racing || p == race.Finish {
+			return 0, room.Refuse(protocol.CodeRacing)
+		}
+		return 0, fmt.Errorf("%w", room.ErrFull)
 	}
 	m.humans++
 	return room.PlayerID(id), nil
@@ -64,7 +69,17 @@ func (m *Match) Welcome(id room.PlayerID, code, newToken string, out room.Outbox
 	cid := race.CarID(id)
 	out.To(id, protocol.NewWelcome(id, code, newToken, uint8(cid), m.set.Handling.String(), m.set.Contact.String(),
 		m.set.Laps, trackName, m.r.Creator() == cid))
-	out.To(id, m.gridMsg())
+	m.syncGrid(out, true) // one grid for everyone, the new player included
+	switch m.r.Phase() {
+	case race.Lights:
+		if m.lights.T != "" {
+			out.To(id, m.lights)
+		}
+	case race.Results:
+		if m.results.T != "" {
+			out.To(id, m.results)
+		}
+	}
 }
 
 func (m *Match) Leave(id room.PlayerID) {
@@ -104,23 +119,22 @@ func (m *Match) notice(id room.PlayerID, code, msg string, out room.Outbox) {
 // (when the roster or a ready flag changed, or the phase became grid),
 // lights, laps, wings, resets, results.
 func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
-	in := make(map[race.CarID]car.Input, len(inputs))
+	clear(m.in)
 	for id, i := range inputs {
-		in[race.CarID(id)] = i.Car()
+		m.in[race.CarID(id)] = i.Car()
 	}
-	ev := m.r.Step(in)
-	if ev.LightsOut {
-		m.raceStart = m.r.Tick()
-	}
+	ev := m.r.Step(m.in)
 	if m.r.Tick()%SnapEvery == 0 {
 		out.Snap(m.snap())
 	}
 	m.syncGrid(out, ev.PhaseChanged && m.r.Phase() == race.Grid)
 	if ev.Lights > 0 {
-		out.All(protocol.LightsMsg{T: protocol.TLights, On: ev.Lights})
+		m.lights = protocol.LightsMsg{T: protocol.TLights, On: ev.Lights}
+		out.All(m.lights)
 	}
 	if ev.LightsOut {
-		out.All(protocol.LightsMsg{T: protocol.TLights, Out: m.r.Tick()})
+		m.lights = protocol.LightsMsg{T: protocol.TLights, Out: m.r.Tick()}
+		out.All(m.lights)
 	}
 	for _, l := range ev.Laps {
 		out.All(protocol.NewLap(l))
@@ -132,30 +146,41 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 		out.All(protocol.NewReset(id))
 	}
 	if ev.Results != nil {
-		out.All(protocol.NewResults(ev.Results))
+		m.results = protocol.NewResults(ev.Results)
+		out.All(m.results)
 	}
-	if gi := m.gameInfo(); gi != m.info || m.humans != m.infoHuman {
-		m.info, m.infoHuman = gi, m.humans
+	// Join and leave are republished by the room itself; only the game's own changes here.
+	if gi := m.gameInfo(); gi != m.info {
+		m.info = gi
 		out.Changed()
 	}
 }
 
-func (m *Match) gridMsg() protocol.GridMsg {
-	cars := make([]protocol.GridCar, 0, Seats)
-	for _, c := range m.r.Cars() {
-		cars = append(cars, protocol.GridCar{ID: uint8(c.ID), Name: c.Driver.Name, Bot: !c.Driver.Human, Ready: c.Driver.Ready})
-	}
-	return protocol.GridMsg{T: protocol.TGrid, Cars: cars}
+func gridCar(c *race.Car) protocol.GridCar {
+	return protocol.GridCar{ID: uint8(c.ID), Name: c.Driver.Name, Bot: !c.Driver.Human, Ready: c.Driver.Ready}
 }
 
-// syncGrid broadcasts the grid when it differs from the last one sent (or force).
+// syncGrid broadcasts the grid when it differs from the last one sent (or
+// force). The comparison allocates nothing; the message is built on change only.
 func (m *Match) syncGrid(out room.Outbox, force bool) {
-	g := m.gridMsg()
-	if !force && slices.Equal(g.Cars, m.grid) {
+	cars, owner := m.r.Cars(), uint8(m.r.Creator())
+	changed := force || !m.gridSent || owner != m.gridOwner
+	for i, c := range cars {
+		if changed {
+			break
+		}
+		changed = gridCar(c) != m.grid[i]
+	}
+	if !changed {
 		return
 	}
-	m.grid = g.Cars
-	out.All(g)
+	msg := protocol.GridMsg{T: protocol.TGrid, Cars: make([]protocol.GridCar, len(cars)), Creator: owner}
+	for i, c := range cars {
+		msg.Cars[i] = gridCar(c)
+		m.grid[i] = msg.Cars[i]
+	}
+	m.gridOwner, m.gridSent = owner, true
+	out.All(msg)
 }
 
 func (m *Match) snap() protocol.Snap {
@@ -165,7 +190,7 @@ func (m *Match) snap() protocol.Snap {
 	}
 	clock := 0
 	if p := m.r.Phase(); p == race.Racing || p == race.Finish {
-		clock = (m.r.Tick() - m.raceStart) * 1000 / tickRate
+		clock = (m.r.Tick() - m.r.RaceStart()) * 1000 / race.TickRate
 	}
 	return protocol.Snap{T: protocol.TSnap, Tick: m.r.Tick(), Phase: m.r.Phase().String(), Clock: clock, Cars: cars}
 }
@@ -176,9 +201,12 @@ func (m *Match) ChatScope(room.PlayerID) func(room.PlayerID) bool {
 }
 
 func (m *Match) gameInfo() Info {
-	lap := 0
-	for _, c := range m.r.Cars() {
-		lap = max(lap, c.Lap)
+	lap := 0 // the leader's current lap while the race runs
+	if p := m.r.Phase(); p != race.Grid && p != race.Lights {
+		for _, c := range m.r.Cars() {
+			lap = max(lap, c.Lap)
+		}
+		lap = min(lap+1, m.set.Laps)
 	}
 	return Info{Handling: m.set.Handling.String(), Contact: m.set.Contact.String(), Laps: m.set.Laps,
 		Phase: m.r.Phase().String(), Lap: lap}

@@ -120,6 +120,9 @@ func (r *Race) Phase() Phase       { return r.phase }
 func (r *Race) Tick() int          { return r.tick }
 func (r *Race) Creator() CarID     { return r.creator }
 
+// RaceStart is the tick of lights out (0 before the first start).
+func (r *Race) RaceStart() int { return r.raceStart }
+
 func (r *Race) Cars() []*Car { return r.cars[:] }
 
 func (r *Race) makeBot(c *Car) {

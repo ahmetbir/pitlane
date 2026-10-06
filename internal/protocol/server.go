@@ -133,10 +133,11 @@ type GridCar struct {
 
 // GridMsg lists the grid; sent when it changes. Not evictable.
 //
-//	{"t":"grid","cars":[{"id":1,"name":"Ace","bot":false,"ready":true},{"id":2,"name":"Bot 2","bot":true,"ready":true}]}
+//	{"t":"grid","cars":[{"id":1,"name":"Ace","bot":false,"ready":true},{"id":2,"name":"Bot 2","bot":true,"ready":true}],"creator":1}
 type GridMsg struct {
-	T    string    `json:"t"` // "grid"
-	Cars []GridCar `json:"cars"`
+	T       string    `json:"t"` // "grid"
+	Cars    []GridCar `json:"cars"`
+	Creator uint8     `json:"creator"` // car id that may press start, 0 = none
 }
 
 // LightsMsg is the start sequence: on lights lit (1..5); on is 0 and out the
