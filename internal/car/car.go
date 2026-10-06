@@ -133,6 +133,8 @@ const (
 	latLoss    = 0.12 // grip loss per unit of lateral transfer / axle load
 	suspLoss   = 0.15 // grip loss at Dmg.Susp = 1
 	minLoad    = 0.1  // axle load floor, × static load
+	wingLost   = 0.6  // Dmg.FrontWing above this: the wing is gone
+	lostWingCL = 0.3  // front C_L factor with the wing gone
 	lowSpeed   = 1.0  // below this total speed lateral force blends to 0
 	slipCap    = 0.6  // slip angle clamp (rad)
 	slipVX     = 3.0  // slip denominator floor (m/s)
@@ -212,6 +214,10 @@ func NewParams(h Handling, s Setup, d Damage) Params {
 	// Every product feeding a sum is materialised; see the package comment.
 	fw, rw := float64(s[FrontWing]-1), float64(s[RearWing]-1)
 	clF := 0.9 + float64(float64(0.22*fw)*(1-float64(0.7*d.FrontWing)))
+	if d.FrontWing > wingLost {
+		// Wing gone: the whole front downforce (base + setting) drops 70 %.
+		clF = float64((0.9 + float64(0.22*fw)) * lostWingCL)
+	}
 	clR := clRearBase + float64(float64(0.26*rw)*(1-float64(0.7*d.RearWing)))
 	p.AeroF, p.AeroR = aeroQ*clF, aeroQ*clR
 	p.DragK = aeroQ * (cdBase + float64(cdPerStep*(fw+rw)))

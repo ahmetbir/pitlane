@@ -397,6 +397,23 @@ func TestBackwardsRecovers(t *testing.T) {
 	t.Fatalf("still VX %.2f after 5 s", st.VX)
 }
 
+// A lost front wing (damage > 0.6) costs 70 % of the whole front downforce.
+func TestLostFrontWing(t *testing.T) {
+	for fw := 1; fw <= 11; fw++ {
+		s := with(DefaultSetup(), FrontWing, fw)
+		ok := NewParams(Sim, s, Damage{}).AeroF
+		lost := NewParams(Sim, s, Damage{FrontWing: 0.61}).AeroF
+		if math.Abs(lost/ok-0.3) > 1e-12 {
+			t.Fatalf("front wing %d: lost/intact front downforce %.15f", fw, lost/ok)
+		}
+	}
+	ok, hit := grip(Sim, Damage{}, 50), grip(Sim, Damage{FrontWing: 0.61}, 50)
+	if !(hit > 0 && hit < ok) {
+		t.Fatalf("steady lateral accel at 50 m/s: intact %.2f, wing lost %.2f", ok, hit)
+	}
+	t.Logf("steady lateral accel at 50 m/s: intact %.2f, wing lost %.2f", ok, hit)
+}
+
 type rng uint64
 
 func (r *rng) next() uint64 {
