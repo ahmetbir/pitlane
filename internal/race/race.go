@@ -51,6 +51,7 @@ type Car struct {
 	rankLap int // net forward line crossings, counted or not; ranking only
 	slot    track.Pose
 	brain   bot.Brain
+	slow    int // consecutive racing ticks below resetSpeed (marshal reset)
 }
 
 type LapEvent struct {
@@ -80,6 +81,7 @@ type Events struct {
 	Results      []ResultRow
 	PhaseChanged bool
 	WingLost     []CarID // cars whose front wing came off this tick (full contact)
+	Reset        []CarID // cars the marshals put back on the racing line this tick
 }
 
 type Race struct {
@@ -131,7 +133,7 @@ func (r *Race) place(c *Car, p track.Pose) {
 	c.Seg, _, c.S = r.tr.Locate(p.X, p.Z, 0)
 	c.Lap, c.Sector, c.LapStart = 0, 0, r.tick
 	c.Best, c.Last, c.OffTicks = 0, 0, 0
-	c.LapValid, c.Finished, c.FinishTick, c.jumped, c.rankLap = true, false, 0, false, 0
+	c.LapValid, c.Finished, c.FinishTick, c.jumped, c.rankLap, c.slow = true, false, 0, false, 0, 0
 }
 
 func (r *Race) humans() (n int, allReady bool) {
@@ -283,6 +285,31 @@ func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
 	return c.brain.Drive(&c.St, &c.P, r.tr, c.Seg, r.ahead(i, sp), r.set.Handling)
 }
 
+// marshal puts every unfinished car that has been slower than resetSpeed for resetTicks
+// racing ticks back on the racing line at its own s, pointing down the track and at rest
+// (there is no reverse gear: a car nose-first against the wall cannot leave by itself).
+// Lap, sector and timing state are kept; the time lost is the penalty.
+func (r *Race) marshal() (reset []CarID) {
+	for _, c := range r.cars {
+		if c.Finished || c.St.Speed() >= resetSpeed {
+			c.slow = 0
+			continue
+		}
+		if c.slow++; c.slow < resetTicks {
+			continue
+		}
+		i, _, s := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
+		x, z := r.tr.Point(s, r.tr.Line[i])
+		g := r.tr.Segs[i]
+		c.St = car.State{X: x, Z: z, H: math.Atan2(g.TZ, g.TX), HX: g.TX, HZ: g.TZ, Gear: 1, Dmg: c.St.Dmg}
+		c.Seg, _, c.S = r.tr.Locate(x, z, i)
+		c.brain = bot.Brain{Skill: c.brain.Skill}
+		c.slow = 0
+		reset = append(reset, c.ID)
+	}
+	return reset
+}
+
 // Step advances one tick. Cars are visited in ID order; inputs are looked up, never iterated.
 func (r *Race) Step(inputs map[CarID]car.Input) Events {
 	ev := Events{Lights: -1}
@@ -310,6 +337,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 		if r.phase != Lights {
 			ev.WingLost = r.resolveContacts(&walls)
 			r.timing(&ev)
+			ev.Reset = r.marshal()
 		}
 	}
 
@@ -332,7 +360,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			for _, c := range r.cars {
 				c.LapStart, c.Lap = r.tick, 0
 				c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
-				c.Sector, c.LapValid, c.OffTicks, c.rankLap = 0, true, 0, 0
+				c.Sector, c.LapValid, c.OffTicks, c.rankLap, c.slow = 0, true, 0, 0, 0
 			}
 			r.setPhase(Racing)
 			ev.PhaseChanged = true

@@ -58,4 +58,6 @@ const (
 	jumpStartMeters = 0.5
 	jumpStartPenMs  = 5000
 	numCars         = 10
+	resetSpeed      = 1.0     // m/s: slower than this counts towards a marshal reset
+	resetTicks      = 5 * tps // consecutive slow racing ticks before the reset
 )
