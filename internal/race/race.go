@@ -297,14 +297,14 @@ func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
 	return c.brain.Drive(&c.St, &c.P, c.Seg, near, stand)
 }
 
-// marshal puts every unfinished car that has been slower than resetSpeed for resetTicks
-// racing ticks back on the racing line at its own s, pointing down the track and at rest
-// (there is no reverse gear: a car nose-first against the wall cannot leave by itself).
+// marshal puts every unfinished car that is not drivable and has been slower than resetSpeed
+// for resetTicks racing ticks back on the racing line at its own s, pointing down the track and
+// at rest (there is no reverse gear: a car nose-first against the wall cannot leave by itself).
 // Lap, sector and timing state are kept; the time lost is the penalty. A due reset waits
 // (and is retried every tick) while traffic would arrive on top of it: see clearForReset.
 func (r *Race) marshal() (reset []CarID) {
 	for _, c := range r.cars {
-		if c.Finished || c.St.Speed() >= resetSpeed {
+		if c.Finished || c.St.Speed() >= resetSpeed || r.drivable(c) {
 			c.slow = 0
 			continue
 		}
@@ -325,6 +325,15 @@ func (r *Race) marshal() (reset []CarID) {
 		reset = append(reset, c.ID)
 	}
 	return reset
+}
+
+// drivable: the car can drive away on its own (no reverse gear needed): on the asphalt and
+// pointing within 45° of the track direction. The marshals leave such a car alone, however
+// long it stands (an idle player is gone round, not moved).
+func (r *Race) drivable(c *Car) bool {
+	i, lat, _ := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
+	g := &r.tr.Segs[i]
+	return math.Abs(lat) <= r.tr.Width/2 && c.St.HX*g.TX+c.St.HZ*g.TZ >= drivableCos
 }
 
 // clearForReset: no other unfinished car that is moving (resetSpeed or faster) is within

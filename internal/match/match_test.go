@@ -2,6 +2,7 @@ package match
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/ahmetbir/pitlane/internal/car"
@@ -277,13 +278,16 @@ func TestChatScopeEveryone(t *testing.T) {
 	}
 }
 
-// TestResetBroadcast: a human who never moves after lights out is put back on the racing line
-// by the marshals, and everyone hears the reset.
+// TestResetBroadcast: a human whose car stands facing the wrong way after lights out (it
+// cannot drive away without a reverse gear) is put back on the racing line by the marshals,
+// and everyone hears the reset.
 func TestResetBroadcast(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Idle")
 	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5}}, out)
 	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+	st := &m.r.Cars()[a-1].St
+	st.HX, st.HZ, st.H = -st.HX, -st.HZ, st.H+math.Pi
 	out.take()
 	var resets []protocol.ResetMsg
 	for i := 0; i < 60*60 && len(resets) == 0; i++ {

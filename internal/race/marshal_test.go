@@ -55,7 +55,7 @@ func TestMarshalResetsCarStuckOnWall(t *testing.T) {
 
 func TestMarshalIgnoresShortStops(t *testing.T) {
 	r, a := marshalRace()
-	put(r, a, 100, 0, 0)
+	put(r, a, 100, 10, 0) // on the grass: not drivable, so standing counts
 	a.St.Gear = 1
 	step := func(in car.Input) {
 		if ev := r.Step(map[CarID]car.Input{a.ID: in}); slices.Contains(ev.Reset, a.ID) {
@@ -76,9 +76,33 @@ func TestMarshalIgnoresShortStops(t *testing.T) {
 	}
 }
 
+// TestMarshalLeavesDrivableCarsAlone: a car standing straight on the asphalt is never reset,
+// however long it stands; on the grass or facing more than 45° off the track it is.
+func TestMarshalLeavesDrivableCarsAlone(t *testing.T) {
+	for _, c := range []struct {
+		lat, turn float64
+		reset     bool
+	}{
+		{0, 0, false}, {-6.5, 0, false}, {3, 0.7, false}, // asphalt, within 45°
+		{10, 0, true}, {0, 0.9, true}, {0, math.Pi, true}, // grass, 52° off, backwards
+	} {
+		r, a := marshalRace()
+		put(r, a, 100, c.lat, 0)
+		h := math.Atan2(a.St.HZ, a.St.HX) + c.turn
+		a.St.H, a.St.HX, a.St.HZ, a.St.Gear = h, math.Cos(h), math.Sin(h), 1
+		got := false
+		for k := 0; k < 2*resetTicks && !got; k++ {
+			got = slices.Contains(r.Step(nil).Reset, a.ID)
+		}
+		if got != c.reset {
+			t.Errorf("lat %.1f turned %.2f rad: reset %v", c.lat, c.turn, got)
+		}
+	}
+}
+
 func TestMarshalNeverResetsFinishedCars(t *testing.T) {
 	r, a := marshalRace()
-	put(r, a, 100, 0, 0)
+	put(r, a, 100, 10, 0) // on the grass: would be reset if unfinished
 	a.Finished = true
 	for k := 0; k < 3*resetTicks; k++ {
 		if ev := r.Step(nil); len(ev.Reset) > 0 {
@@ -129,7 +153,8 @@ func TestMarshalWaitsForTraffic(t *testing.T) {
 }
 
 // TestIdleHumanDoesNotFreezeTheRace: a human who never presses anything after lights out
-// (marshal-reset onto the line, then standing) is passed by every bot, which all finish.
+// stands on the grid, is never reset (it is drivable) and is passed by every bot, which all
+// finish.
 func TestIdleHumanDoesNotFreezeTheRace(t *testing.T) {
 	for _, mode := range []Contact{Soft, Full} {
 		for _, h := range []car.Handling{car.Sim, car.Arcade} {
@@ -149,6 +174,9 @@ func TestIdleHumanDoesNotFreezeTheRace(t *testing.T) {
 				rows = ev.Results
 			}
 			limit := 3*r.tr.Length/25 + 45
+			if resets[id] != 0 {
+				t.Errorf("%v %v: the idle human, straight on the asphalt, was reset %d times", mode, h, resets[id])
+			}
 			for _, row := range rows {
 				if row.Human {
 					continue
@@ -184,6 +212,9 @@ func TestHairpinQueueClears(t *testing.T) {
 			for _, c := range r.Step(nil).Reset {
 				resets[c]++
 			}
+		}
+		if n := len(resets); n != 0 {
+			t.Errorf("%v: resets %v (every car stands straight on the asphalt)", mode, resets)
 		}
 		for _, c := range r.cars {
 			if c.ID == id {
