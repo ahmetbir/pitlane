@@ -6,12 +6,16 @@ import (
 	"testing"
 
 	"github.com/ahmetbir/pitlane/internal/car"
+	"github.com/ahmetbir/pitlane/internal/track"
 )
 
 // marshalRace is a Racing race (timedRace) in which only car 1 races: every other car is
 // finished and parked out on the grass, so it is neither reset nor in car 1's way.
-func marshalRace() (*Race, *Car) {
+func marshalRace() (*Race, *Car) { return marshalRaceIn(Ghost) }
+
+func marshalRaceIn(mode Contact) (*Race, *Car) {
 	r := timedRace()
+	r.set.Contact = mode
 	for _, c := range r.cars[1:] {
 		put(r, c, c.S, -15, 0)
 		c.Finished = true
@@ -39,12 +43,14 @@ func TestMarshalResetsCarStuckOnWall(t *testing.T) {
 	}
 
 	r.Unseat(a.ID) // a bot drives it on
-	for k := 0; k < 150*tps && a.Lap == 0; k++ {
+	t0 := r.Tick()
+	for r.Tick()-t0 < 150*tps && a.Lap == 0 {
 		r.Step(nil)
 	}
 	if a.Lap != 1 {
 		t.Fatalf("no lap after the reset: s %.1f sector %d", a.S, a.Sector)
 	}
+	t.Logf("lap completed %.1f s after the reset", float64(r.Tick()-t0)/tps)
 }
 
 func TestMarshalIgnoresShortStops(t *testing.T) {
@@ -78,5 +84,118 @@ func TestMarshalNeverResetsFinishedCars(t *testing.T) {
 		if ev := r.Step(nil); len(ev.Reset) > 0 {
 			t.Fatalf("tick %d: reset %v", k, ev.Reset)
 		}
+	}
+}
+
+// noseIn parks c nose-first against the left wall at s, at rest.
+func noseIn(r *Race, c *Car, s float64) {
+	put(r, c, s, r.tr.WallLat()-halfWidth, 0)
+	c.St.HX, c.St.HZ = -c.St.HZ, c.St.HX
+	c.St.H = math.Atan2(c.St.HZ, c.St.HX)
+	c.St.Gear = 1
+}
+
+// TestMarshalWaitsForTraffic: a reset due while a bot closes in at 45 m/s from 29 m behind
+// waits until the bot has gone by; with full contact nobody is damaged.
+func TestMarshalWaitsForTraffic(t *testing.T) {
+	r, a := marshalRaceIn(Full)
+	noseIn(r, a, 200)
+	a.slow = resetTicks - 1 // the reset is due on the next tick
+	b := r.cars[1]
+	i := 85 // seg at s ≈ 171
+	put(r, b, 171, r.tr.Line[i], 45)
+	b.Finished, b.Driver.Human = false, false
+	b.Seg, _, b.S = r.tr.Locate(b.St.X, b.St.Z, -1)
+	at := -1
+	for k := 0; k < 10*tps && at < 0; k++ {
+		ev := r.Step(nil)
+		if slices.Contains(ev.Reset, a.ID) {
+			at = k
+			if ahead := math.Mod(b.S-a.S+r.tr.Length, r.tr.Length); ahead <= resetAhead || ahead > r.tr.Length/2 {
+				t.Fatalf("reset with the bot %.1f m ahead", ahead)
+			}
+		}
+	}
+	if at < 1 {
+		t.Fatalf("reset at tick %d", at)
+	}
+	for k := 0; k < 3*tps; k++ {
+		r.Step(nil)
+	}
+	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) {
+		t.Fatalf("damage A %+v B %+v", a.St.Dmg, b.St.Dmg)
+	}
+	t.Logf("reset after %d held ticks", at)
+}
+
+// TestIdleHumanDoesNotFreezeTheRace: a human who never presses anything after lights out
+// (marshal-reset onto the line, then standing) is passed by every bot, which all finish.
+func TestIdleHumanDoesNotFreezeTheRace(t *testing.T) {
+	for _, mode := range []Contact{Soft, Full} {
+		for _, h := range []car.Handling{car.Sim, car.Arcade} {
+			r := New(Settings{Handling: h, Contact: mode, Laps: 3, Seed: 11}, track.Kiyi())
+			id, _ := r.Seat("idle", "")
+			r.Ready(id, car.DefaultSetup())
+			start, resets := 0, map[CarID]int{}
+			var rows []ResultRow
+			for r.Tick() < 600*tps && rows == nil {
+				ev := r.Step(nil)
+				if ev.LightsOut {
+					start = r.Tick()
+				}
+				for _, c := range ev.Reset {
+					resets[c]++
+				}
+				rows = ev.Results
+			}
+			limit := 3*r.tr.Length/25 + 45
+			for _, row := range rows {
+				if row.Human {
+					continue
+				}
+				if row.TotalMs == 0 || float64(row.TotalMs)/1000 > limit {
+					t.Errorf("%v %v: bot %d laps %d total %d ms", mode, h, row.Car, row.Laps, row.TotalMs)
+				}
+				if resets[row.Car] > 1 {
+					t.Errorf("%v %v: bot %d reset %d times", mode, h, row.Car, resets[row.Car])
+				}
+			}
+			t.Logf("%v %v: results %.1f s after the start, resets %v, held %d", mode, h, float64(r.Tick()-start)/tps, resets, r.held)
+		}
+	}
+}
+
+// TestHairpinQueueClears: bots stopped nose to tail on the line in the hairpin, with a human
+// standing at the front of the queue, all get going and leave the hairpin; none is reset twice.
+func TestHairpinQueueClears(t *testing.T) {
+	for _, mode := range []Contact{Soft, Full} {
+		r := New(Settings{Handling: car.Sim, Contact: mode, Laps: 3, Seed: 3}, track.Kiyi())
+		r.phase, r.raceStart = Racing, r.tick
+		id, _ := r.Seat("idle", "")
+		for i, c := range r.cars {
+			s := 1130 - 8*float64(i)
+			put(r, c, s, r.tr.Line[int(s/2)], 0)
+			c.St.Gear = 1
+			c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
+			c.LapStart = r.tick
+		}
+		resets := map[CarID]int{}
+		for k := 0; k < 60*tps; k++ {
+			for _, c := range r.Step(nil).Reset {
+				resets[c]++
+			}
+		}
+		for _, c := range r.cars {
+			if c.ID == id {
+				continue
+			}
+			if c.S < 1300 && c.Lap == 0 {
+				t.Errorf("%v: bot %d still at s %.0f", mode, c.ID, c.S)
+			}
+			if resets[c.ID] > 1 {
+				t.Errorf("%v: bot %d reset %d times", mode, c.ID, resets[c.ID])
+			}
+		}
+		t.Logf("%v: resets %v, held %d", mode, resets, r.held)
 	}
 }

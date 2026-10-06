@@ -207,3 +207,15 @@ type WingMsg struct {
 
 // NewWing builds the wing-lost event for a car.
 func NewWing(id race.CarID) WingMsg { return WingMsg{T: TWing, Car: uint8(id)} }
+
+// ResetMsg: the marshals put a stuck car back on the racing line (it had been below 1 m/s
+// for 5 s); not evictable. The snapshots carry its new pose.
+//
+//	{"t":"reset","car":3}
+type ResetMsg struct {
+	T   string `json:"t"` // "reset"
+	Car uint8  `json:"car"`
+}
+
+// NewReset builds the marshal-reset event for a car.
+func NewReset(id race.CarID) ResetMsg { return ResetMsg{T: TReset, Car: uint8(id)} }

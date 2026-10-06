@@ -112,6 +112,7 @@ func TestMessageWires(t *testing.T) {
 		{LightsMsg{T: TLights, Out: 2210}, `{"t":"lights","on":0,"out":2210}`},
 		{NewLap(race.LapEvent{Car: 3, Lap: 2, Ms: 83412, Valid: true, Best: 82950}), `{"t":"lap","car":3,"lap":2,"ms":83412,"valid":true,"best":82950}`},
 		{NewWing(3), `{"t":"wing","car":3}`},
+		{NewReset(3), `{"t":"reset","car":3}`},
 		{GridMsg{T: TGrid, Cars: []GridCar{{1, "Ace", false, true}}}, `{"t":"grid","cars":[{"id":1,"name":"Ace","bot":false,"ready":true}]}`},
 		{NewResults([]race.ResultRow{{Pos: 1, Car: 4, Name: "Ace", Laps: 5, TotalMs: 421300, BestMs: 83100}}),
 			`{"t":"results","rows":[{"pos":1,"id":4,"name":"Ace","laps":5,"total":421300,"best":83100,"penalty":0}]}`},

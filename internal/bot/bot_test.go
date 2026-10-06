@@ -36,12 +36,13 @@ func soloLaps(h car.Handling, laps, maxTicks int) lapRun {
 	g := tr.Grid[0]
 	st := car.State{X: g.X, Z: g.Z, H: g.H, HX: math.Cos(g.H), HZ: math.Sin(g.H), Gear: 1}
 	p := car.NewParams(h, car.DefaultSetup(), car.Damage{})
-	b := bot.Brain{Skill: 0.98}
+	b := bot.NewBrain(0, bot.NewProfile(tr, h))
+	b.Skill = 0.98
 	seg, _, s := tr.Locate(st.X, st.Z, -1)
 	var r lapRun
 	off, start := 0, 0
 	for r.ticks = 1; r.ticks <= maxTicks && len(r.laps) < laps; r.ticks++ {
-		in := b.Drive(&st, &p, tr, seg, nil, h)
+		in := b.Drive(&st, &p, seg, nil, nil)
 		_, lat, _ := tr.Locate(st.X, st.Z, seg)
 		car.Step(&st, &p, in, env(tr.SurfaceAt(lat)))
 		prev := s
@@ -140,11 +141,12 @@ func TestBotsFinishARace(t *testing.T) {
 }
 
 func TestBotDeterministic(t *testing.T) {
-	if bot.NewBrain(7) != bot.NewBrain(7) {
+	prof := bot.NewProfile(track.Kiyi(), car.Sim)
+	if bot.NewBrain(7, prof) != bot.NewBrain(7, prof) {
 		t.Fatal("NewBrain not deterministic")
 	}
 	for seed := uint64(0); seed < 200; seed++ {
-		if s := bot.NewBrain(seed).Skill; s < 0.90 || s >= 0.98 {
+		if s := bot.NewBrain(seed, prof).Skill; s < 0.90 || s >= 0.98 {
 			t.Fatalf("skill %v out of range", s)
 		}
 	}

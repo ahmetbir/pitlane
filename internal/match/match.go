@@ -102,7 +102,7 @@ func (m *Match) notice(id room.PlayerID, code, msg string, out room.Outbox) {
 
 // Step runs one tick. Order of sends: snapshot (every SnapEvery ticks), grid
 // (when the roster or a ready flag changed, or the phase became grid),
-// lights, laps, wings, results.
+// lights, laps, wings, resets, results.
 func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	in := make(map[race.CarID]car.Input, len(inputs))
 	for id, i := range inputs {
@@ -128,10 +128,12 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	for _, id := range ev.WingLost {
 		out.All(protocol.NewWing(id))
 	}
+	for _, id := range ev.Reset {
+		out.All(protocol.NewReset(id))
+	}
 	if ev.Results != nil {
 		out.All(protocol.NewResults(ev.Results))
 	}
-	// A marshal reset (ev.Reset) has no message in wire v1: the snapshots show it.
 	if gi := m.gameInfo(); gi != m.info || m.humans != m.infoHuman {
 		m.info, m.infoHuman = gi, m.humans
 		out.Changed()

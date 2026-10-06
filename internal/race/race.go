@@ -87,6 +87,7 @@ type Events struct {
 type Race struct {
 	set   Settings
 	tr    *track.Track
+	prof  *bot.Profile // the bots' speed profile for this track and handling
 	rng   rng
 	cars  [numCars]*Car
 	phase Phase
@@ -98,12 +99,13 @@ type Race struct {
 	creator    CarID
 	raceStart  int  // tick of lights out
 	startEvent bool // Start changed the phase; surface it on the next Step
+	held       int  // marshal resets put off for traffic (diagnostic)
 	finishing  bool // leader has completed the race (set by timing)
 }
 
 // New builds a race with ten bot cars on the grid, in phase Grid.
 func New(s Settings, tr *track.Track) *Race {
-	r := &Race{set: s, tr: tr, rng: rng{s: s.Seed}}
+	r := &Race{set: s, tr: tr, rng: rng{s: s.Seed}, prof: bot.NewProfile(tr, s.Handling)}
 	for i := range r.cars {
 		id := CarID(i + 1)
 		r.cars[i] = &Car{ID: id, Pos: i + 1}
@@ -124,7 +126,7 @@ func (r *Race) makeBot(c *Car) {
 	c.Driver = Driver{Name: fmt.Sprintf("Bot %d", c.ID), Setup: car.DefaultSetup()}
 	c.P = car.NewParams(r.set.Handling, c.Driver.Setup, car.Damage{})
 	seed := rng{s: r.set.Seed ^ uint64(c.ID)}
-	c.brain = bot.NewBrain(seed.next())
+	c.brain = bot.NewBrain(seed.next(), r.prof)
 }
 
 func (r *Race) place(c *Car, p track.Pose) {
@@ -245,8 +247,10 @@ func (r *Race) car(id CarID) *Car {
 }
 
 const (
-	aheadRange = 12.0 // m along the track
-	aheadLat   = 4.0  // m either side
+	aheadRange = 12.0  // m along the track
+	aheadLat   = 4.0   // m either side
+	standRange = 300.0 // m: how far ahead a standing car is seen
+	standSpeed = 2.0   // m/s: below this a car is standing (the bots pass it anywhere)
 )
 
 // spot is where a car is on the track at the start of a tick.
@@ -260,20 +264,27 @@ func (r *Race) spots() (sp [numCars]spot) {
 	return sp
 }
 
-// ahead is the nearest car within aheadRange ahead of car i along the track and aheadLat beside it.
-func (r *Race) ahead(i int, sp *[numCars]spot) *car.State {
-	var best *car.State
-	bd := aheadRange
+// ahead returns, for car i, the nearest car within aheadRange ahead along the track and
+// aheadLat beside it, and the nearest standing car (below standSpeed) within standRange and
+// aheadLat, so a bot at speed sees a stopped car in time to go round it.
+func (r *Race) ahead(i int, sp *[numCars]spot) (near, stand *car.State) {
+	nd, sd := aheadRange, standRange
 	for j, o := range r.cars {
-		if j == i {
+		if j == i || math.Abs(sp[j].lat-sp[i].lat) > aheadLat {
 			continue
 		}
 		d := math.Mod(sp[j].s-sp[i].s+r.tr.Length, r.tr.Length)
-		if d > 0 && d <= bd && math.Abs(sp[j].lat-sp[i].lat) <= aheadLat {
-			best, bd = &o.St, d
+		if d <= 0 {
+			continue
+		}
+		if d <= nd {
+			near, nd = &o.St, d
+		}
+		if d <= sd && o.St.Speed() < standSpeed {
+			stand, sd = &o.St, d
 		}
 	}
-	return best
+	return near, stand
 }
 
 // botInput drives a bot car: still on the grid and under the lights, its brain once racing.
@@ -282,20 +293,26 @@ func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
 		return car.Input{}
 	}
 	c := r.cars[i]
-	return c.brain.Drive(&c.St, &c.P, r.tr, c.Seg, r.ahead(i, sp), r.set.Handling)
+	near, stand := r.ahead(i, sp)
+	return c.brain.Drive(&c.St, &c.P, c.Seg, near, stand)
 }
 
 // marshal puts every unfinished car that has been slower than resetSpeed for resetTicks
 // racing ticks back on the racing line at its own s, pointing down the track and at rest
 // (there is no reverse gear: a car nose-first against the wall cannot leave by itself).
-// Lap, sector and timing state are kept; the time lost is the penalty.
+// Lap, sector and timing state are kept; the time lost is the penalty. A due reset waits
+// (and is retried every tick) while traffic would arrive on top of it: see clearForReset.
 func (r *Race) marshal() (reset []CarID) {
 	for _, c := range r.cars {
 		if c.Finished || c.St.Speed() >= resetSpeed {
 			c.slow = 0
 			continue
 		}
-		if c.slow++; c.slow < resetTicks {
+		if c.slow = min(c.slow+1, resetTicks); c.slow < resetTicks {
+			continue
+		}
+		if !r.clearForReset(c) {
+			r.held++
 			continue
 		}
 		i, _, s := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
@@ -303,11 +320,27 @@ func (r *Race) marshal() (reset []CarID) {
 		g := r.tr.Segs[i]
 		c.St = car.State{X: x, Z: z, H: math.Atan2(g.TZ, g.TX), HX: g.TX, HZ: g.TZ, Gear: 1, Dmg: c.St.Dmg}
 		c.Seg, _, c.S = r.tr.Locate(x, z, i)
-		c.brain = bot.Brain{Skill: c.brain.Skill}
+		c.brain.Reset()
 		c.slow = 0
 		reset = append(reset, c.ID)
 	}
 	return reset
+}
+
+// clearForReset: no other unfinished car that is moving (resetSpeed or faster) is within
+// resetBehind behind c along the track or within resetAhead ahead of it. Standing cars are
+// not traffic: two stuck cars must not hold each other.
+func (r *Race) clearForReset(c *Car) bool {
+	L := r.tr.Length
+	for _, o := range r.cars {
+		if o == c || o.Finished || o.St.Speed() < resetSpeed {
+			continue
+		}
+		if ahead := math.Mod(o.S-c.S+L, L); ahead <= resetAhead || L-ahead <= resetBehind {
+			return false
+		}
+	}
+	return true
 }
 
 // Step advances one tick. Cars are visited in ID order; inputs are looked up, never iterated.

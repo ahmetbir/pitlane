@@ -6,7 +6,6 @@ package bot
 
 import (
 	"math"
-	"sync"
 
 	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/track"
@@ -23,6 +22,7 @@ const (
 	brakeUse        = 0.8       // share of the tyres' grip (downforce incl.) the backward pass brakes with
 	accel           = 9.0       // forward pass (m/s²)
 	minBrakeShare   = 0.1       // squared share of grip the backward pass always brakes with
+	dmgWing         = 0.12      // share of target speed a fully lost front downforce costs
 
 	// Steering.
 	lookBase, lookPer = 8.0, 0.35 // pure-pursuit look-ahead: base m + s per m/s
@@ -45,20 +45,28 @@ const (
 	turnWall = 2.0  // m: the turning circle keeps this far from the wall line
 
 	// Traffic.
-	passGap     = 4.0   // m beside the car being passed (soft-contact discs are 3.2 m across)
-	passMin     = 3.5   // m: with less room than this beside it, follow instead
-	maxShift    = 8.0   // m: largest shift off the racing line
-	passCurve   = 0.006 // 1/m: line curvature above which no pass starts
-	passBrake   = 1.0   // m/s: over the profile speed by this much, the car is braking: no pass starts
-	shiftLook   = 50    // segs (≈100 m) checked for a tighter shifted radius
-	shiftDecel  = 8.0   // m/s²: braking planned for it
-	passMargin  = 1.0   // m/s: a car this much below the target speed is worth passing
-	shiftRate   = 2.0   // m/s: the shift moves at most this fast (4 m in 2 s)
-	edgeMargin  = 1.0   // the shifted line stays this far inside the asphalt edge
-	followGap   = 6.0   // m: gap kept behind a car in the way
-	followK     = 2.0   // 1/s: speed under the car ahead per metre inside followGap
-	followDecel = 6.0   // m/s²: braking the follower plans with to arrive at followGap
-	overlapLat  = 3.5   // m: lateral distance under which a car ahead is in the way
+	passGap        = 4.0   // m beside the car being passed (soft-contact discs are 3.2 m across)
+	passMin        = 3.5   // m: with less room than this beside it, follow instead
+	maxShift       = 12.0  // m: largest shift off the racing line
+	movingAX       = 0.5   // m/s²: a slow car accelerating harder than this is getting going, not standing
+	creepV         = 3.0   // m/s: crawl past a standing car
+	creepGap       = 3.5   // m: … unless this close behind it
+	creepLat       = 2.2   // m: … or this far beside it (the bodies are 2 m wide)
+	nudgeV         = 1.5   // m/s: … and when right behind it
+	wallClear      = 2.0   // m: passing it, the car's centre stays this far from the wall (1 m gap)
+	passCurve      = 0.006 // 1/m: line curvature above which no pass starts
+	passBrake      = 1.0   // m/s: over the profile speed by this much, the car is braking: no pass starts
+	shiftLook      = 50    // segs (≈100 m) checked for a tighter shifted radius
+	shiftDecel     = 8.0   // m/s²: braking planned for it
+	passMargin     = 1.0   // m/s: a car ahead this much slower than this car is worth passing
+	shiftRate      = 2.0   // m/s: the shift moves at most this fast (4 m in 2 s)
+	standShiftRate = 4.0   // m/s: … round a standing car
+	standLead      = 0.5   // s: margin on the time the move round a standing car takes
+	edgeMargin     = 1.0   // the shifted line stays this far inside the asphalt edge
+	followGap      = 6.0   // m: gap kept behind a car in the way
+	followK        = 2.0   // 1/s: speed under the car ahead per metre inside followGap
+	followDecel    = 6.0   // m/s²: braking the follower plans with to arrive at followGap
+	overlapLat     = 3.5   // m: lateral distance under which a car ahead is in the way
 
 	// The car (car package values the bot drives by).
 	wheelbase  = 3.6
@@ -70,19 +78,24 @@ const (
 	dt         = car.DT
 )
 
-// Brain is one bot driver. Skill scales target speeds; Offset is the current overtaking shift.
+// Brain is one bot driver on one Profile (a track and a handling). Skill scales target speeds;
+// Offset is the current overtaking shift.
 type Brain struct {
 	Skill  float64 // 0.90..0.98
 	Offset float64 // m, left +
 
+	prof *Profile
 	turn float64 // committed turn-around direction (+1 left, −1 right, 0 none)
 }
 
-// NewBrain maps a seed to a driver: Skill uniform in [0.90, 0.98).
-func NewBrain(seed uint64) Brain {
+// NewBrain maps a seed to a driver on prof: Skill uniform in [0.90, 0.98).
+func NewBrain(seed uint64, prof *Profile) Brain {
 	u := float64(mix(seed)>>11) / (1 << 53)
-	return Brain{Skill: 0.90 + 0.08*u}
+	return Brain{Skill: 0.90 + 0.08*u, prof: prof}
 }
+
+// Reset forgets the driver's manoeuvres (shift, turn-around); Skill and Profile stay.
+func (b *Brain) Reset() { b.Offset, b.turn = 0, 0 }
 
 // mix is the splitmix64 finaliser.
 func mix(z uint64) uint64 {
@@ -93,46 +106,67 @@ func mix(z uint64) uint64 {
 }
 
 // Drive returns the bot's input for this tick. seg is the car's last seg (Locate hint);
-// ahead is the nearest car within 12 m ahead on track and ±4 m lateral (nil = none).
-func (b *Brain) Drive(st *car.State, p *car.Params, tr *track.Track, seg int, ahead *car.State, h car.Handling) car.Input {
-	prof := profileFor(tr, h)
+// ahead is the nearest car within 12 m ahead on track and ±4 m lateral; stand is the nearest
+// standing car further ahead that the race reports (nil = none).
+func (b *Brain) Drive(st *car.State, p *car.Params, seg int, ahead, stand *car.State) car.Input {
+	prof, tr := b.prof, b.prof.tr
 	n := len(tr.Segs)
 	ds := tr.Length / float64(n)
 	_, lat, s := tr.Locate(st.X, st.Z, seg)
 	speed := st.Speed()
 
-	// Traffic: keep a gap behind a car in the way; pass one that is slower than this car
-	// wants to go on its roomier side, passGap beside it, if the asphalt leaves room.
-	vp := b.targetSpeed(&prof, s, ds)
+	vp := b.targetSpeed(prof, s, ds) * prof.damageScale(p)
 	vt := vp
 	edge := tr.Width/2 - edgeMargin
 	target := 0.0
 	band := coastBand
-	if ahead != nil {
+	standing := stand != nil && stand.AX < movingAX // not one just pulling away
+
+	// A moving car close ahead: keep a gap behind it when it is in the way; pass it on its
+	// roomier side, passGap beside it, when this car is catching it and the asphalt leaves room.
+	if ahead != nil && !(standing && ahead == stand) {
 		_, aLat, aS := tr.Locate(ahead.X, ahead.Z, seg)
 		av := ahead.Speed()
-		if av < max(speed, vt-passMargin) {
-			side := 1.0
-			if aLat > 0 { // less asphalt to its left than to its right
-				side = -1
-			}
-			if pl := clamp(aLat+side*passGap, -edge, edge); math.Abs(pl-aLat) >= passMin {
-				target = clamp(pl-lineAt(tr, s), -maxShift, maxShift)
-			}
+		if av < speed-passMargin {
+			target = passTarget(tr, s, aLat, edge)
 		}
 		if gap := wrap(aS-s, tr.Length); math.Abs(aLat-lat) < overlapLat {
-			// Arrive at followGap at its speed; closer than that, drop back.
-			vf := math.Sqrt(av*av+2*followDecel*max(gap-followGap, 0)) - followK*max(followGap-gap, 0)
+			// Arrive at followGap at its speed; closer than that, drop back (never below 0).
+			vf := max(math.Sqrt(av*av+2*followDecel*max(gap-followGap, 0))-followK*max(followGap-gap, 0), 0)
 			if vf < vt {
 				vt, band = vf, 0
 			}
 		}
 	}
-	// In a corner or a braking zone no pass starts and a shift only shrinks.
-	if math.Abs(prof.k[int(s/ds)%n]) > passCurve || vp < speed-passBrake {
+	// A standing car: go round it anywhere (corners included, off the asphalt if need be),
+	// only as fast as the remaining sideways move allows, and never stop behind it: a standing
+	// car cannot shift sideways.
+	if standing {
+		edge = tr.WallLat() - wallClear
+		_, aLat, aS := tr.Locate(stand.X, stand.Z, seg)
+		gap := wrap(aS-s, tr.Length)
+		target = passTarget(tr, s, aLat, edge)
+		if need := overlapLat - math.Abs(aLat-lat); need > 0 {
+			floor := creepV
+			if gap <= creepGap && math.Abs(aLat-lat) <= creepLat {
+				floor = nudgeV // right behind it: slow enough that a touch does no damage
+			}
+			// Room to swing out on a turning arc before reaching it (no reverse gear).
+			room := creepGap + math.Sqrt(max(2*turnR*need-need*need, 0))
+			vs := max((gap-room)/(need/standShiftRate+standLead), floor)
+			if vs < vt {
+				vt, band = vs, 0
+			}
+		}
+	} else if math.Abs(prof.k[int(s/ds)%n]) > passCurve || vp < speed-passBrake {
+		// In a corner or a braking zone no pass starts and a shift only shrinks.
 		target = clamp(target, min(0, b.Offset), max(0, b.Offset))
 	}
-	b.Offset += max(min(target-b.Offset, shiftRate*dt), -shiftRate*dt)
+	rate := shiftRate
+	if standing {
+		rate = standShiftRate
+	}
+	b.Offset += max(min(target-b.Offset, rate*dt), -rate*dt)
 
 	// Steering: pure pursuit to the (shifted) racing line, look-ahead ∝ speed.
 	// Off the line (rejoining from the grass), look further so the way back is gentle.
@@ -164,7 +198,7 @@ func (b *Brain) Drive(st *car.State, p *car.Params, tr *track.Track, seg int, ah
 		delta = clamp(delta, th-lim, th+lim)
 	}
 	steer := delta / steerLock
-	if h == car.Arcade {
+	if prof.h == car.Arcade {
 		steer *= 1 + max(st.VX, 0)/arcadeVX
 	}
 	steer = clamp(steer, -1, 1)
@@ -176,10 +210,24 @@ func (b *Brain) Drive(st *car.State, p *car.Params, tr *track.Track, seg int, ah
 	return in
 }
 
+// passTarget is the shift that puts the car passGap beside a car at lat aLat, on its roomier
+// side within ±edge; 0 when that leaves less than passMin.
+func passTarget(tr *track.Track, s, aLat, edge float64) float64 {
+	side := 1.0
+	if aLat > 0 { // less room to its left than to its right
+		side = -1
+	}
+	pl := clamp(aLat+side*passGap, -edge, edge)
+	if math.Abs(pl-aLat) < passMin {
+		return 0
+	}
+	return clamp(pl-lineAt(tr, s), -maxShift, maxShift)
+}
+
 // targetSpeed is the skill-scaled profile speed, lowered where the current shift puts the car
 // on a tighter radius than the line: over the next shiftLook segs, each seg's corner speed on
 // the shifted path, reachable from here at shiftDecel.
-func (b *Brain) targetSpeed(prof *profile, s, ds float64) float64 {
+func (b *Brain) targetSpeed(prof *Profile, s, ds float64) float64 {
 	n := len(prof.v)
 	i := int(s/ds) % n
 	vt := b.Skill * prof.v[i]
@@ -302,43 +350,38 @@ func wrap(d, L float64) float64 {
 
 func clamp(v, lo, hi float64) float64 { return min(max(v, lo), hi) }
 
-// profile is a racing line's target speed and curvature per seg, and the braking model the
-// speeds were built with.
-type profile struct {
+// Profile is a racing line's target speed and curvature per seg for one track and handling,
+// and the braking model the speeds were built with. Read-only once built: share it between
+// the brains of a race.
+type Profile struct {
+	tr       *track.Track
+	h        car.Handling
 	v, k     []float64
 	mu, aero float64 // handling grip; downforce per v² per kg
+	aeroF    float64 // undamaged front downforce per v² (N·s²/m²)
+}
+
+// damageScale slows a damaged car: the corner speed goes with the square root of the grip
+// suspension damage leaves, and a lost front wing costs up to dmgWing of it.
+func (pr *Profile) damageScale(p *car.Params) float64 {
+	return math.Sqrt(p.GripDmg) * (1 - dmgWing*(1-min(p.AeroF/pr.aeroF, 1)))
 }
 
 // brakeDecel is the deceleration the profile plans at speed v on a path of curvature k: a share
 // of the tyres' grip (downforce incl.), less what the corner's lateral demand takes (friction
 // circle), never below a minimum share.
-func (pr *profile) brakeDecel(v, k float64) float64 {
+func (pr *Profile) brakeDecel(v, k float64) float64 {
 	grip := brakeUse * pr.mu * (gravity + pr.aero*v*v)
 	ay := v * v * math.Abs(k)
 	return min(brakeMax, math.Sqrt(max(grip*grip-ay*ay, minBrakeShare*grip*grip)))
 }
 
-// profiles caches one profile per handling, for the first track asked about.
-var profiles [2]struct {
-	once sync.Once
-	tr   *track.Track
-	p    profile
-}
+// Speed is the target speed (m/s) at seg i, before skill.
+func (pr *Profile) Speed(i int) float64 { return pr.v[i] }
 
-// SpeedProfile returns the target speed per seg (m/s) for the racing line. It is cached per
-// handling for the first track it sees; other tracks are computed on every call. Read-only.
-func SpeedProfile(tr *track.Track, h car.Handling) []float64 { return profileFor(tr, h).v }
-
-func profileFor(tr *track.Track, h car.Handling) profile {
-	c := &profiles[h&1]
-	c.once.Do(func() { c.tr, c.p = tr, buildProfile(tr, h) })
-	if c.tr == tr {
-		return c.p
-	}
-	return buildProfile(tr, h)
-}
-
-func buildProfile(tr *track.Track, h car.Handling) profile {
+// NewProfile builds the speed profile of tr's racing line for handling h: the closed-form corner
+// speed, then a braking (backward) and an acceleration (forward) pass.
+func NewProfile(tr *track.Track, h car.Handling) *Profile {
 	mu := muArcade
 	if h == car.Sim {
 		mu = muSim
@@ -351,7 +394,7 @@ func buildProfile(tr *track.Track, h car.Handling) profile {
 		v[i] = min(vMax, math.Sqrt(mu*gravity/max(math.Abs(ki), 1e-4)))
 	}
 	cp := car.NewParams(h, car.DefaultSetup(), car.Damage{})
-	pr := profile{v: v, k: k, mu: cp.Mu, aero: (cp.AeroF + cp.AeroR) / car.Mass}
+	pr := &Profile{tr: tr, h: h, v: v, k: k, mu: cp.Mu, aero: (cp.AeroF + cp.AeroR) / car.Mass, aeroF: cp.AeroF}
 	// Braking; two laps of each pass settle the wrap-around.
 	for j := 2*n - 1; j >= 0; j-- {
 		i := j % n

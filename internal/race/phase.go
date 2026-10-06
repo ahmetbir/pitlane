@@ -60,4 +60,6 @@ const (
 	numCars         = 10
 	resetSpeed      = 1.0     // m/s: slower than this counts towards a marshal reset
 	resetTicks      = 5 * tps // consecutive slow racing ticks before the reset
+	resetBehind     = 80.0    // m: a moving car this close behind holds a reset
+	resetAhead      = 6.0     // m: any car this close ahead holds a reset
 )

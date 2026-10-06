@@ -276,3 +276,28 @@ func TestChatScopeEveryone(t *testing.T) {
 		t.Fatal("chat must reach everyone")
 	}
 }
+
+// TestResetBroadcast: a human who never moves after lights out is put back on the racing line
+// by the marshals, and everyone hears the reset.
+func TestResetBroadcast(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Idle")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5}}, out)
+	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+	out.take()
+	var resets []protocol.ResetMsg
+	for i := 0; i < 60*60 && len(resets) == 0; i++ {
+		m.Step(nil, out)
+		for _, s := range out.take() {
+			if r, ok := s.msg.(protocol.ResetMsg); ok {
+				if s.to != 0 {
+					t.Fatalf("reset sent to %d only", s.to)
+				}
+				resets = append(resets, r)
+			}
+		}
+	}
+	if len(resets) == 0 || resets[0] != (protocol.ResetMsg{T: protocol.TReset, Car: uint8(a)}) {
+		t.Fatalf("resets %+v", resets)
+	}
+}

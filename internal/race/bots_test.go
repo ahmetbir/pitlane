@@ -15,31 +15,28 @@ import (
 func TestBotTurnsAround(t *testing.T) {
 	tr := track.Kiyi()
 	for _, h := range []car.Handling{car.Sim, car.Arcade} {
+		prof := bot.NewProfile(tr, h)
 		for _, s0 := range []float64{100, 1130, 2200} {
 			for _, lat0 := range []float64{-16, -9, -4, 0, 4, 9, 16} {
-				{
-					a := math.Pi
-					i := int(s0/tr.Length*float64(len(tr.Segs))) % len(tr.Segs)
-					g := tr.Segs[i]
-					x, z := tr.Point(s0, lat0)
-					hx := math.Cos(a)*g.TX + math.Sin(a)*g.NX
-					hz := math.Cos(a)*g.TZ + math.Sin(a)*g.NZ
-					st := car.State{X: x, Z: z, HX: hx, HZ: hz, Gear: 1}
-					p := car.NewParams(h, car.DefaultSetup(), car.Damage{})
-					b := bot.Brain{Skill: 0.9}
-					seg, s := i, s0
-					wall, dist := false, 0.0
-					for k := 0; k < 30*60; k++ {
-						in := b.Drive(&st, &p, tr, seg, nil, h)
-						j, _ := moveCar(&st, &p, in, tr, &seg)
-						wall = wall || j > 0
-						_, _, ns := tr.Locate(st.X, st.Z, seg)
-						d := math.Mod(ns-s+1.5*tr.Length, tr.Length) - tr.Length/2
-						dist, s = dist+d, ns
-					}
-					if dist < 100 || wall {
-						t.Errorf("%v s=%v lat=%v a=%.2f: wall %v, progress %.0f m", h, s0, lat0, a, wall, dist)
-					}
+				i := int(s0/tr.Length*float64(len(tr.Segs))) % len(tr.Segs)
+				g := tr.Segs[i]
+				x, z := tr.Point(s0, lat0)
+				st := car.State{X: x, Z: z, HX: -g.TX, HZ: -g.TZ, Gear: 1} // facing straight back
+				p := car.NewParams(h, car.DefaultSetup(), car.Damage{})
+				b := bot.NewBrain(0, prof)
+				b.Skill = 0.9
+				seg, s := i, s0
+				wall, dist := false, 0.0
+				for k := 0; k < 30*60; k++ {
+					in := b.Drive(&st, &p, seg, nil, nil)
+					j, _ := moveCar(&st, &p, in, tr, &seg)
+					wall = wall || j > 0
+					_, _, ns := tr.Locate(st.X, st.Z, seg)
+					d := math.Mod(ns-s+1.5*tr.Length, tr.Length) - tr.Length/2
+					dist, s = dist+d, ns
+				}
+				if dist < 100 || wall {
+					t.Errorf("%v s=%v lat=%v: wall %v, progress %.0f m", h, s0, lat0, wall, dist)
 				}
 			}
 		}
