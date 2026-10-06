@@ -61,6 +61,9 @@ func (s Setup) Clamp() Setup {
 // Damage is 0 (intact) .. 1 (broken) per part.
 type Damage struct{ FrontWing, RearWing, Susp float64 }
 
+// FrontWingLost reports whether the front wing is gone (damage above 0.6).
+func (d Damage) FrontWingLost() bool { return d.FrontWing > wingLost }
+
 // Input is one tick of driver input: Throttle 0..1, Brake 0..1, Steer -1..1 (left +).
 type Input struct{ Throttle, Brake, Steer float64 }
 
@@ -214,7 +217,7 @@ func NewParams(h Handling, s Setup, d Damage) Params {
 	// Every product feeding a sum is materialised; see the package comment.
 	fw, rw := float64(s[FrontWing]-1), float64(s[RearWing]-1)
 	clF := 0.9 + float64(float64(0.22*fw)*(1-float64(0.7*d.FrontWing)))
-	if d.FrontWing > wingLost {
+	if d.FrontWingLost() {
 		// Wing gone: the whole front downforce (base + setting) drops 70 %.
 		clF = float64((0.9 + float64(0.22*fw)) * lostWingCL)
 	}

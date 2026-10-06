@@ -11,6 +11,15 @@ import (
 // Pitlane's server messages. Examples are one JSON line each (the TS client
 // is written from these; field names are fixed by wire v1).
 
+// NewWelcome builds the welcome of a player; tok is set only when a pilot
+// token was just issued.
+func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, contact string, laps int, trackName string, creator bool) Welcome {
+	return Welcome{
+		Welcome: netproto.Welcome{T: netproto.TWelcome, You: you, Code: code, Tok: tok},
+		Car:     carID, Handling: handling, Contact: contact, Laps: laps, Track: trackName, Creator: creator,
+	}
+}
+
 // Welcome seats a player: the roomkit envelope (t, you, code, tok) flat
 // beside the room settings.
 //
@@ -52,11 +61,10 @@ func (s Snap) WithAck(ack uint32) any {
 
 // Car flag bits (the last element of a cars row).
 const (
-	FlagBot       = 1 << 0
-	FlagFinished  = 1 << 1
-	FlagWingLost  = 1 << 2
-	FlagOffTrack  = 1 << 3
-	wingLostAbove = 0.6 // front wing damage above this: the wing is gone (as car and race)
+	FlagBot      = 1 << 0
+	FlagFinished = 1 << 1
+	FlagWingLost = 1 << 2
+	FlagOffTrack = 1 << 3
 )
 
 // OffTrack reports whether c is beyond the asphalt and its kerb.
@@ -76,7 +84,7 @@ func EncodeCar(c *race.Car, offTrack bool) [11]int32 {
 	if c.Finished {
 		f |= FlagFinished
 	}
-	if c.St.Dmg.FrontWing > wingLostAbove {
+	if c.St.Dmg.FrontWingLost() {
 		f |= FlagWingLost
 	}
 	if offTrack {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/roomkit/netproto"
@@ -29,7 +30,28 @@ type ClientMsg struct {
 	Br int `json:"br,omitempty"` // in: brake 0..100
 	St int `json:"st,omitempty"` // in: steer -127..127 (left +)
 
-	Setup *[6]int `json:"setup,omitempty"` // ready: [fw, rw, bb, gear, diff, susp]
+	Setup *SetupInts `json:"setup,omitempty"` // ready: exactly 6 integers [fw, rw, bb, gear, diff, susp]
+}
+
+// SetupInts is the wire setup: exactly six integers.
+type SetupInts [6]int
+
+// UnmarshalJSON accepts only an array of exactly six integers.
+func (s *SetupInts) UnmarshalJSON(b []byte) error {
+	var n []json.RawMessage
+	if err := json.Unmarshal(b, &n); err != nil || len(n) != len(s) {
+		return ErrBadField
+	}
+	var out SetupInts
+	for i, v := range n {
+		x, err := strconv.ParseInt(string(v), 10, 32)
+		if err != nil {
+			return ErrBadField
+		}
+		out[i] = int(x)
+	}
+	*s = out
+	return nil
 }
 
 var (
@@ -57,7 +79,7 @@ func DecodeClient(b []byte) (ClientMsg, error) {
 	if err := netproto.CheckHeader(m.Head(), ChatMax); err != nil {
 		return ClientMsg{}, err
 	}
-	if m.T == TCreate && !validCreate(m) {
+	if m.T == TCreate && !validCreate(m) || m.T == TReady && m.Setup == nil {
 		return ClientMsg{}, ErrBadField
 	}
 	m.Th, m.Br, m.St = clamp(m.Th, 0, 100), clamp(m.Br, 0, 100), clamp(m.St, -127, 127)

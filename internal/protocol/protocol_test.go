@@ -25,7 +25,7 @@ func TestDecodeRoundTrip(t *testing.T) {
 		t.Fatalf("create: %+v %v", m, err)
 	}
 	m, err = DecodeClient([]byte(`{"t":"ready","setup":[1,2,3,4,5,6]}`))
-	if err != nil || m.Setup == nil || *m.Setup != [6]int{1, 2, 3, 4, 5, 6} {
+	if err != nil || m.Setup == nil || *m.Setup != (SetupInts{1, 2, 3, 4, 5, 6}) {
 		t.Fatalf("ready: %+v %v", m, err)
 	}
 	if m, err = DecodeClient([]byte(`{"t":"start"}`)); err != nil || m.T != TStart {
@@ -71,6 +71,13 @@ func TestDecodeRefuses(t *testing.T) {
 		"bad laps":     `{"t":"create","laps":4}`,
 		"chat 0":       `{"t":"chat"}`,
 		"chat 7":       `{"t":"chat","id":7}`,
+		"setup 2":      `{"t":"ready","setup":[1,2]}`,
+		"setup 7":      `{"t":"ready","setup":[1,2,3,4,5,6,7]}`,
+		"setup float":  `{"t":"ready","setup":[1.5,2,3,4,5,6]}`,
+		"setup string": `{"t":"ready","setup":["1",2,3,4,5,6]}`,
+		"setup null":   `{"t":"ready","setup":null}`,
+		"setup absent": `{"t":"ready"}`,
+		"seq -1":       `{"t":"in","seq":-1}`,
 		"big":          `{"t":"hello","name":"` + strings.Repeat("a", MaxClientMsg) + `"}`,
 	} {
 		if _, err := DecodeClient([]byte(s)); err == nil {
@@ -164,5 +171,35 @@ func TestOffTrack(t *testing.T) {
 	c.St.X, c.St.Z = x, z
 	if !OffTrack(tr, c) {
 		t.Error("beyond the kerb is off track")
+	}
+}
+
+func TestDecodeListedAbsentIsNil(t *testing.T) {
+	m, err := DecodeClient([]byte(`{"t":"create"}`))
+	if err != nil || m.Listed != nil {
+		t.Fatalf("%+v %v", m, err)
+	}
+}
+
+func TestDecodeBoundary(t *testing.T) {
+	pad := MaxClientMsg - len(`{"t":"hello","name":""}`)
+	b := []byte(`{"t":"hello","name":"` + strings.Repeat("a", pad) + `"}`)
+	if len(b) != MaxClientMsg {
+		t.Fatalf("len %d", len(b))
+	}
+	if _, err := DecodeClient(b); err != nil {
+		t.Fatalf("1024 bytes: %v", err)
+	}
+	if _, err := DecodeClient(append(b[:len(b)-1:len(b)-1], ' ', '}')); err != ErrTooBig {
+		t.Fatalf("1025 bytes: %v", err)
+	}
+}
+
+func TestWelcomeTok(t *testing.T) {
+	w := NewWelcome(7, "K3FQ", "tok123", 4, "arcade", "soft", 5, "kiyi", true)
+	b, err := json.Marshal(w)
+	want := `{"t":"welcome","you":7,"code":"K3FQ","tok":"tok123","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true}`
+	if err != nil || string(b) != want {
+		t.Fatalf("%s %v", b, err)
 	}
 }

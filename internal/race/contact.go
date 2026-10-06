@@ -14,7 +14,6 @@ const (
 	friction      = 0.4    // Coulomb μ between cars
 	damageDead    = 1000.0 // N·s absorbed without damage (rubs, nudges)
 	damageImpulse = 8000.0 // N·s above the dead zone for a full unit of damage
-	wingLost      = 0.6    // FrontWing above this: the wing is gone
 	tangentMin    = 1e-9   // m/s: below this sliding speed no friction impulse
 )
 
@@ -50,7 +49,7 @@ func (h *harm) hit(c *Car, x, j float64) {
 		return
 	}
 	h.hurt[c.ID-1] = true
-	if v == &c.St.Dmg.FrontWing && was <= wingLost && *v > wingLost {
+	if v == &c.St.Dmg.FrontWing && !(car.Damage{FrontWing: was}).FrontWingLost() && c.St.Dmg.FrontWingLost() {
 		h.lost = append(h.lost, c.ID)
 	}
 }

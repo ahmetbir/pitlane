@@ -139,7 +139,7 @@ func TestFullWingLostEvent(t *testing.T) {
 	if lost[b.ID] != 1 || len(lost) != 1 {
 		t.Fatalf("wing lost events %v (B front %.3f, A front %.3f)", lost, b.St.Dmg.FrontWing, a.St.Dmg.FrontWing)
 	}
-	if b.St.Dmg.FrontWing <= wingLost {
+	if !b.St.Dmg.FrontWingLost() {
 		t.Fatalf("B front wing %.3f", b.St.Dmg.FrontWing)
 	}
 	if b.P == p0 || b.P != car.NewParams(r.set.Handling, b.Driver.Setup, b.St.Dmg) {
@@ -262,7 +262,7 @@ func TestDamageDeadZone(t *testing.T) {
 			}
 		}
 	}
-	if lost != 1 || b.St.Dmg.FrontWing <= wingLost {
+	if lost != 1 || !b.St.Dmg.FrontWingLost() {
 		t.Fatalf("12 m/s rear-end: lost %d, B %+v", lost, b.St.Dmg)
 	}
 	t.Logf("12 m/s rear-end: A %+v B %+v", a.St.Dmg, b.St.Dmg)
@@ -290,7 +290,7 @@ func TestWallDamageFullOnly(t *testing.T) {
 		if damaged != (mode == Full) {
 			t.Fatalf("%v: damage %+v", mode, a.St.Dmg)
 		}
-		if mode == Full && (a.St.Dmg.FrontWing <= wingLost || len(lost) != 1 ||
+		if mode == Full && (!a.St.Dmg.FrontWingLost() || len(lost) != 1 ||
 			a.P != car.NewParams(r.set.Handling, a.Driver.Setup, a.St.Dmg)) {
 			t.Fatalf("full wall hit: %+v lost %v", a.St.Dmg, lost)
 		}

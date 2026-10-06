@@ -4,6 +4,9 @@ package protocol
 
 import "github.com/ahmetbir/roomkit/netproto"
 
+// The "notice", "error", "pong" and "chat" shapes are roomkit's: see
+// github.com/ahmetbir/roomkit/netproto.
+
 // Version is the wire protocol version a hello must carry.
 const Version = 1
 
