@@ -199,12 +199,11 @@ func TestBackwardsAfterLapDoesNotDoubleCount(t *testing.T) {
 
 func TestPositionsOrder(t *testing.T) {
 	r := timedRace()
-	L := r.tr.Length
 	a, b, c := r.cars[0], r.cars[1], r.cars[2]
 	put(r, a, 100, 0, 0)
 	put(r, b, 300, 0, 0)
 	put(r, c, 200, 0, 0)
-	c.Lap = 1 // a lap up beats distance
+	c.rankLap = 1 // a lap up beats distance
 	r.Step(nil)
 	if !(c.Pos < b.Pos && b.Pos < a.Pos) {
 		t.Fatalf("pos c%d b%d a%d", c.Pos, b.Pos, a.Pos)
@@ -224,7 +223,6 @@ func TestPositionsOrder(t *testing.T) {
 	if len(seen) != numCars {
 		t.Fatal("positions not a permutation")
 	}
-	_ = L
 }
 
 func TestGridCarsRankBeforeFirstCrossing(t *testing.T) {
@@ -289,5 +287,122 @@ func TestResultsPenaltyReorders(t *testing.T) {
 	}
 	if rows[1].TotalMs != 15000 {
 		t.Fatalf("total %d", rows[1].TotalMs)
+	}
+}
+
+func TestSameTickFinishIgnoresIDOrder(t *testing.T) {
+	r := timedRace()
+	r.set.Laps = 2
+	L := r.tr.Length
+	lapped, leader := r.cars[0], r.cars[1] // lower ID is the lapped one
+	for _, c := range []*Car{lapped, leader} {
+		put(r, c, L-6, 0, 0)
+		c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
+		c.Sector, c.rankLap = 2, 1
+	}
+	leader.Lap, lapped.Lap = 1, 0
+	r.Step(nil)
+	put(r, lapped, 2, 0, 0)
+	put(r, leader, 2, 0, 0)
+	r.Step(nil)
+	if !leader.Finished || !lapped.Finished || lapped.FinishTick != leader.FinishTick || r.Phase() != Finish {
+		t.Fatalf("leader %v lapped %v phase %v", leader.Finished, lapped.Finished, r.Phase())
+	}
+}
+
+func TestReversingOverLineDoesNotTakeLead(t *testing.T) {
+	r := timedRace()
+	L := r.tr.Length
+	a, b := r.cars[0], r.cars[1]
+	for _, c := range []*Car{a, b} {
+		c.Lap, c.rankLap = 1, 1
+	}
+	put(r, b, 100, 0, 0)
+	put(r, a, 20, 0, 0)
+	r.Step(nil)
+	if b.Pos >= a.Pos {
+		t.Fatalf("setup: a%d b%d", a.Pos, b.Pos)
+	}
+	for _, s := range []float64{10, 3, L - 3, L - 10} {
+		put(r, a, s, 0, 0)
+		r.Step(nil)
+		if a.Pos < b.Pos {
+			t.Fatalf("a took the lead at s=%v", s)
+		}
+	}
+	for _, s := range []float64{L - 3, 3, 20} { // and forward again, uncounted
+		put(r, a, s, 0, 0)
+		r.Step(nil)
+	}
+	if a.Lap != 1 || a.rankLap != 1 || a.Pos < b.Pos {
+		t.Fatalf("lap %d rank %d pos %d", a.Lap, a.rankLap, a.Pos)
+	}
+}
+
+func TestLineJitterAfterLapNoExtraLap(t *testing.T) {
+	r := timedRace()
+	c := r.cars[0]
+	L := r.tr.Length
+	put(r, c, L-12, 0, 0)
+	c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
+	lapOf(r, c, 0)
+	if c.Lap != 1 {
+		t.Fatalf("lap %d", c.Lap)
+	}
+	for i := 0; i < 60; i++ {
+		s := 1.0
+		if i%2 == 0 {
+			s = L - 1
+		}
+		if ev := teleport(r, c, s, 0); len(ev.Laps) != 0 {
+			t.Fatalf("extra lap at tick %d", i)
+		}
+	}
+	if c.Lap != 1 {
+		t.Fatalf("lap %d", c.Lap)
+	}
+}
+
+func TestFinishTimeoutRanksUnfinishedByRoad(t *testing.T) {
+	r := timedRace()
+	r.set.Laps = 1
+	L := r.tr.Length
+	lead := r.cars[2]
+	put(r, lead, L-6, 0, 0)
+	lead.Seg, _, lead.S = r.tr.Locate(lead.St.X, lead.St.Z, -1)
+	lead.Sector = 2
+	r.Step(nil)
+	put(r, lead, 2, 0, 0)
+	r.Step(nil)
+	if r.Phase() != Finish {
+		t.Fatalf("phase %v", r.Phase())
+	}
+	start := r.Tick()
+	var rows []ResultRow
+	for i := 0; i < finishMaxTicks+5 && rows == nil; i++ {
+		rows = r.Step(nil).Results
+	}
+	if rows == nil || r.Tick()-start < finishMaxTicks-1 || r.Tick()-start > finishMaxTicks+2 {
+		t.Fatalf("results %v after %d ticks", rows != nil, r.Tick()-start)
+	}
+	if rows[0].Car != lead.ID || rows[0].TotalMs == 0 {
+		t.Fatalf("first %+v", rows[0])
+	}
+	want := []CarID{10, 9, 8, 7, 6, 5, 4, 2, 1}
+	for i, id := range want {
+		if rows[i+1].Car != id || rows[i+1].TotalMs != 0 {
+			t.Fatalf("row %d: %+v want car %d", i+1, rows[i+1], id)
+		}
+	}
+}
+
+func TestResultsLappedFinisherBehindLeaderLap(t *testing.T) {
+	r := timedRace()
+	a, b := r.cars[0], r.cars[1]
+	a.Finished, a.Lap, a.FinishTick = true, 2, r.raceStart+600 // faster but a lap down
+	b.Finished, b.Lap, b.FinishTick = true, 3, r.raceStart+900
+	rows := r.results()
+	if rows[0].Car != b.ID || rows[1].Car != a.ID {
+		t.Fatalf("rows %+v", rows[:2])
 	}
 }

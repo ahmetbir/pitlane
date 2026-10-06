@@ -34,7 +34,7 @@ func TestWallKeepsCarInside(t *testing.T) {
 		lim := tr.WallLat() - 1 + 1e-9
 		hits := 0
 		for k := 0; k < 1000; k++ {
-			if moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint) > 0 {
+			if j, _ := moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint); j > 0 {
 				hits++
 			}
 			_, lat, _ := tr.Locate(st.X, st.Z, hint)
@@ -73,13 +73,13 @@ func TestWallImpulseReported(t *testing.T) {
 	st, hint := carAt(tr, 0, math.Pi/6, 90)
 	hit := 0.0
 	for k := 0; k < 1000 && hit == 0; k++ {
-		hit = moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint)
+		hit, _ = moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint)
 	}
 	if hit <= 0 {
 		t.Fatal("no impulse on first contact")
 	}
 	st, hint = carAt(tr, tr.WallLat()-1, 0, 50)
-	if w := moveCar(&st, &p, car.Input{}, tr, &hint); w != 0 {
+	if w, _ := moveCar(&st, &p, car.Input{}, tr, &hint); w != 0 {
 		t.Fatalf("parallel car reported impulse %v", w)
 	}
 }

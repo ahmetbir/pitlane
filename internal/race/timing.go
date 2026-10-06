@@ -14,6 +14,7 @@ const (
 // timing advances sectors, laps, lap validity, finish state and positions for every car.
 func (r *Race) timing(ev *Events) {
 	L := r.tr.Length
+	var done []*Car // cars that completed a lap this tick
 	for _, c := range r.cars {
 		var lat float64
 		prev := c.S
@@ -28,12 +29,26 @@ func (r *Race) timing(ev *Events) {
 
 		switch {
 		case prev > L-lineWindow && c.S < lineWindow: // forward over the line
+			c.rankLap++
 			if c.Sector == 2 {
 				r.completeLap(c, ev)
+				done = append(done, c)
 			}
 		case prev < lineWindow && c.S > L-lineWindow: // backward over the line: never counts
+			c.rankLap--
 		default:
 			r.advanceSector(c, prev)
+		}
+	}
+	// The finish is decided after every lap of this tick is in, so car order cannot matter.
+	for _, c := range done {
+		if c.Lap >= r.set.Laps {
+			r.finishing = true
+		}
+	}
+	if r.finishing {
+		for _, c := range done {
+			c.Finished, c.FinishTick = true, r.tick
 		}
 	}
 	r.rank()
@@ -62,21 +77,10 @@ func (r *Race) completeLap(c *Car, ev *Events) {
 	}
 	ev.Laps = append(ev.Laps, LapEvent{Car: c.ID, Lap: c.Lap, Ms: ms, Valid: valid, Best: c.Best})
 	c.LapStart, c.Sector, c.OffTicks, c.LapValid = r.tick, 0, 0, true
-	if r.finishing || c.Lap >= r.set.Laps {
-		c.Finished, c.FinishTick = true, r.tick
-		r.finishing = true
-	}
 }
 
-// progress is the distance raced; cars still behind the start line count negative.
-func (r *Race) progress(c *Car) float64 {
-	L := r.tr.Length
-	s := c.S
-	if c.Lap == 0 && c.Sector == 0 && s > L/2 {
-		s -= L
-	}
-	return float64(c.Lap)*L + s
-}
+// progress is the distance raced, from the net line crossings rather than the counted laps.
+func (r *Race) progress(c *Car) float64 { return float64(c.rankLap)*r.tr.Length + c.S }
 
 // rank orders the cars: finished by finish tick, then by progress, then by ID.
 func (r *Race) rank() {

@@ -12,33 +12,80 @@ const (
 	fullCorrect   = 0.8    // share of the overlap removed per tick
 	restitution   = 0.25   // e
 	friction      = 0.4    // Coulomb μ between cars
-	damageImpulse = 9000.0 // N·s for a full unit of damage
+	damageDead    = 1000.0 // N·s absorbed without damage (rubs, nudges)
+	damageImpulse = 8000.0 // N·s above the dead zone for a full unit of damage
 	wingLost      = 0.6    // FrontWing above this: the wing is gone
 	tangentMin    = 1e-9   // m/s: below this sliding speed no friction impulse
 )
 
-// resolveContacts settles every overlapping pair in ID order and returns the cars that
-// lost their front wing this tick.
-func (r *Race) resolveContacts() (lost []CarID) {
+// wallHit is one car's barrier contact this tick (moveCar's impulse and outward normal).
+type wallHit struct {
+	j float64
+	n vec
+}
+
+// harm collects this tick's damage: which cars changed and which lost the front wing.
+type harm struct {
+	hurt [numCars]bool
+	lost []CarID
+}
+
+// hit adds the damage of impulse j to the side of c at local x (m along the heading):
+// front third → FrontWing, rear third → RearWing, else Susp.
+func (h *harm) hit(c *Car, x, j float64) {
+	amount := math.Max(0, j-damageDead) / damageImpulse
+	if amount == 0 {
+		return
+	}
+	v := &c.St.Dmg.Susp
+	switch {
+	case x > boxHalfLen/3:
+		v = &c.St.Dmg.FrontWing
+	case x < -boxHalfLen/3:
+		v = &c.St.Dmg.RearWing
+	}
+	was := *v
+	*v = math.Min(1, was+amount)
+	if *v == was {
+		return
+	}
+	h.hurt[c.ID-1] = true
+	if v == &c.St.Dmg.FrontWing && was <= wingLost && *v > wingLost {
+		h.lost = append(h.lost, c.ID)
+	}
+}
+
+// resolveContacts settles every overlapping pair in ID order, keeps the cars inside the
+// barrier and, in full contact, applies car and wall damage (walls may be nil). It
+// returns the cars that lost their front wing this tick.
+func (r *Race) resolveContacts(walls *[numCars]wallHit) []CarID {
 	if r.set.Contact == Ghost {
 		return nil
 	}
-	var hurt [numCars]bool
+	var h harm
+	if r.set.Contact == Full && walls != nil {
+		for i, c := range r.cars {
+			if w := walls[i]; w.j > 0 {
+				h.hit(c, w.n.dot(vec{c.St.HX, c.St.HZ})*boxHalfLen, w.j)
+			}
+		}
+	}
 	for i, a := range r.cars {
 		for _, b := range r.cars[i+1:] {
 			if r.set.Contact == Soft {
 				softPair(&a.St, &b.St)
 				continue
 			}
-			lost = fullPair(a, b, &hurt, lost)
+			fullPair(a, b, &h)
 		}
 	}
 	for i, c := range r.cars {
-		if hurt[i] {
+		keepInside(&c.St, r.tr, &c.Seg)
+		if h.hurt[i] {
 			c.P = car.NewParams(r.set.Handling, c.Driver.Setup, c.St.Dmg)
 		}
 	}
-	return lost
+	return h.lost
 }
 
 // softPair: discs pushed apart, approaching normal velocity removed, 5 % speed lost.
@@ -65,21 +112,21 @@ func softPair(a, b *car.State) {
 }
 
 // fullPair: SAT boxes, positional correction, impulse with friction and spin, damage.
-func fullPair(a, b *Car, hurt *[numCars]bool, lost []CarID) []CarID {
+func fullPair(a, b *Car, h *harm) {
 	ba, bb := boxOf(&a.St), boxOf(&b.St)
 	s, hit := satOBB(ba, bb)
 	if !hit {
-		return lost
+		return
 	}
 	p := contactPoint(ba, bb, s)
 	corr := s.n.scale(fullCorrect * s.depth / 2)
 	a.St.X, a.St.Z = a.St.X-corr.x, a.St.Z-corr.z
 	b.St.X, b.St.Z = b.St.X+corr.x, b.St.Z+corr.z
 
-	ra, rb := p.sub(ba.c), p.sub(bb.c)
+	ra, rb := p.sub(vec{a.St.X, a.St.Z}), p.sub(vec{b.St.X, b.St.Z})
 	vn := pointVel(&b.St, rb).sub(pointVel(&a.St, ra)).dot(s.n)
 	if vn >= 0 {
-		return lost
+		return
 	}
 	j := -(1 + restitution) * vn / effMass(ra, rb, s.n)
 	impulse(&a.St, ra, s.n.scale(-j))
@@ -95,36 +142,14 @@ func fullPair(a, b *Car, hurt *[numCars]bool, lost []CarID) []CarID {
 		impulse(&b.St, rb, t.scale(jt))
 	}
 
-	for _, c := range [2]*Car{a, b} {
-		changed, gone := damage(&c.St, p, j/damageImpulse)
-		if gone {
-			lost = append(lost, c.ID)
-		}
-		hurt[c.ID-1] = hurt[c.ID-1] || changed
-	}
-	return lost
+	h.hit(a, ra.dot(vec{a.St.HX, a.St.HZ}), j)
+	h.hit(b, rb.dot(vec{b.St.HX, b.St.HZ}), j)
 }
 
 // effMass is the impulse denominator 2/m + (rA×u)²/Iz + (rB×u)²/Iz.
 func effMass(ra, rb, u vec) float64 {
 	ka, kb := ra.cross(u), rb.cross(u)
 	return 2/car.Mass + ka*ka/car.Iz + kb*kb/car.Iz
-}
-
-// damage adds amount to the side of st that p hits (front, rear or middle third);
-// it reports whether the damage changed and whether the front wing went past wingLost now.
-func damage(st *car.State, p vec, amount float64) (changed, wingGone bool) {
-	x := p.sub(vec{st.X, st.Z}).dot(vec{st.HX, st.HZ})
-	v := &st.Dmg.Susp
-	switch {
-	case x > boxHalfLen/3:
-		v = &st.Dmg.FrontWing
-	case x < -boxHalfLen/3:
-		v = &st.Dmg.RearWing
-	}
-	was := *v
-	*v = math.Min(1, was+amount)
-	return *v != was, v == &st.Dmg.FrontWing && was <= wingLost && *v > wingLost
 }
 
 // worldVel converts the body velocity to world axes.

@@ -59,7 +59,7 @@ func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	put(r, a, 100, 1, 30)
 	put(r, b, 100, -1, 30)
 	va, vb := a.St.Speed(), b.St.Speed()
-	r.resolveContacts()
+	r.resolveContacts(nil)
 	d := math.Hypot(b.St.X-a.St.X, b.St.Z-a.St.Z)
 	if d < 2*softRadius-1e-9 {
 		t.Fatalf("still overlapping: %.4f m", d)
@@ -82,7 +82,7 @@ func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	put(r, a, 100, 1, 30)
 	put(r, b, 100, -1, 30)
 	b.St.VY = 2
-	r.resolveContacts()
+	r.resolveContacts(nil)
 	n := vec{a.St.X - b.St.X, a.St.Z - b.St.Z}
 	if vn := worldVel(&a.St).sub(worldVel(&b.St)).dot(n); vn < -1e-9 {
 		t.Fatalf("still approaching: %.4f", vn)
@@ -185,5 +185,113 @@ func TestContactDeterministic(t *testing.T) {
 				t.Fatalf("%v car %d not finite", mode, i+1)
 			}
 		}
+	}
+}
+
+// latOf is a car's lateral offset from the centreline.
+func latOf(r *Race, c *Car) float64 {
+	_, lat, _ := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
+	return lat
+}
+
+func TestContactKeepsCarsOffTheBarrier(t *testing.T) {
+	for _, mode := range []Contact{Soft, Full} {
+		r := contactRace(mode)
+		a, b := r.cars[0], r.cars[1]
+		limit := r.tr.WallLat() - halfWidth
+		put(r, a, 100, limit, 20)
+		put(r, b, 100, limit-1, 20)
+		b.St.VY = 3 // shoving A into the wall
+		worst := 0.0
+		for k := 0; k < 60; k++ {
+			r.Step(nil)
+			for _, c := range r.cars {
+				if lat := math.Abs(latOf(r, c)); lat > limit+1e-9 {
+					t.Fatalf("%v tick %d car %d at lat %.6f past %.6f", mode, k, c.ID, lat, limit)
+				} else if c.ID == a.ID {
+					worst = math.Max(worst, lat)
+				}
+			}
+		}
+		t.Logf("%v: A max |lat| %.6f, limit %.6f", mode, worst, limit)
+	}
+}
+
+func TestDamageDeadZone(t *testing.T) {
+	// Side rub at 1 m/s.
+	r := contactRace(Full)
+	a, b := r.cars[0], r.cars[1]
+	put(r, a, 100, 0.9, 30)
+	put(r, b, 100, -0.9, 30)
+	b.St.VY = 1
+	p0 := a.P
+	r.resolveContacts(nil)
+	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) || a.P != p0 || b.P != p0 {
+		t.Fatalf("side rub damage %+v %+v", a.St.Dmg, b.St.Dmg)
+	}
+	if vy := b.St.VY; vy >= 1 {
+		t.Fatalf("rub not resolved: B VY %.3f", vy)
+	}
+
+	// Nudge from behind at 2 m/s.
+	r = contactRace(Full)
+	a, b = r.cars[0], r.cars[1]
+	put(r, a, 100, 0, 30)
+	put(r, b, 100, 0, 32)
+	b.St.X, b.St.Z = a.St.X-5.3*a.St.HX, a.St.Z-5.3*a.St.HZ // 0.1 m overlap
+	r.resolveContacts(nil)
+	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) || a.P != p0 || b.P != p0 {
+		t.Fatalf("nudge damage %+v %+v", a.St.Dmg, b.St.Dmg)
+	}
+	if b.St.VX >= 32 {
+		t.Fatal("nudge not resolved")
+	}
+
+	// Rear-end at 12 m/s loses the wing.
+	r = contactRace(Full)
+	a, b = r.cars[0], r.cars[1]
+	put(r, a, 100, 0, 30)
+	put(r, b, 94, 0, 42)
+	lost := 0
+	for k := 0; k < 60; k++ {
+		for _, id := range r.Step(nil).WingLost {
+			if id == b.ID {
+				lost++
+			}
+		}
+	}
+	if lost != 1 || b.St.Dmg.FrontWing <= wingLost {
+		t.Fatalf("12 m/s rear-end: lost %d, B %+v", lost, b.St.Dmg)
+	}
+	t.Logf("12 m/s rear-end: A %+v B %+v", a.St.Dmg, b.St.Dmg)
+}
+
+func TestWallDamageFullOnly(t *testing.T) {
+	for _, mode := range []Contact{Soft, Full} {
+		r := contactRace(mode)
+		a := r.cars[0]
+		put(r, a, 100, 0, 30)
+		h := math.Atan2(a.St.HZ, a.St.HX) + math.Pi/6 // 30° towards the left wall
+		a.St.H, a.St.HX, a.St.HZ = h, math.Cos(h), math.Sin(h)
+		var lost []CarID
+		hit := -1
+		for k := 0; k < 300 && hit < 0; k++ {
+			lost = append(lost, r.Step(nil).WingLost...)
+			if math.Abs(latOf(r, a)) >= r.tr.WallLat()-halfWidth-1e-9 {
+				hit = k
+			}
+		}
+		if hit < 0 {
+			t.Fatalf("%v: wall never reached", mode)
+		}
+		damaged := a.St.Dmg != (car.Damage{})
+		if damaged != (mode == Full) {
+			t.Fatalf("%v: damage %+v", mode, a.St.Dmg)
+		}
+		if mode == Full && (a.St.Dmg.FrontWing <= wingLost || len(lost) != 1 ||
+			a.P != car.NewParams(r.set.Handling, a.Driver.Setup, a.St.Dmg)) {
+			t.Fatalf("full wall hit: %+v lost %v", a.St.Dmg, lost)
+		}
+		t.Logf("%v: wall at tick %d, damage %+v", mode, hit, a.St.Dmg)
 	}
 }

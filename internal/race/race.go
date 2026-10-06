@@ -46,8 +46,9 @@ type Car struct {
 	PenaltyMs  int
 	Pos        int
 
-	jumped bool
-	slot   track.Pose
+	jumped  bool
+	rankLap int // net forward line crossings, counted or not; ranking only
+	slot    track.Pose
 }
 
 type LapEvent struct {
@@ -126,7 +127,7 @@ func (r *Race) place(c *Car, p track.Pose) {
 	c.Seg, _, c.S = r.tr.Locate(p.X, p.Z, 0)
 	c.Lap, c.Sector, c.LapStart = 0, 0, r.tick
 	c.Best, c.Last, c.OffTicks = 0, 0, 0
-	c.LapValid, c.Finished, c.FinishTick, c.jumped = true, false, 0, false
+	c.LapValid, c.Finished, c.FinishTick, c.jumped, c.rankLap = true, false, 0, false, 0
 }
 
 func (r *Race) humans() (n int, allReady bool) {
@@ -249,15 +250,16 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 	r.startEvent = false
 
 	if r.running() {
-		for _, c := range r.cars {
+		var walls [numCars]wallHit
+		for i, c := range r.cars {
 			in := botInput(c)
 			if c.Driver.Human {
 				in = inputs[c.ID].Clean()
 			}
-			moveCar(&c.St, &c.P, in, r.tr, &c.Seg)
+			walls[i].j, walls[i].n = moveCar(&c.St, &c.P, in, r.tr, &c.Seg)
 		}
 		if r.phase != Lights {
-			ev.WingLost = r.resolveContacts()
+			ev.WingLost = r.resolveContacts(&walls)
 			r.timing(&ev)
 		}
 	}
@@ -281,7 +283,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			for _, c := range r.cars {
 				c.LapStart, c.Lap = r.tick, 0
 				c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
-				c.Sector, c.LapValid, c.OffTicks = 0, true, 0
+				c.Sector, c.LapValid, c.OffTicks, c.rankLap = 0, true, 0, 0
 			}
 			r.setPhase(Racing)
 			ev.PhaseChanged = true
@@ -345,26 +347,31 @@ func (r *Race) byPos() []*Car {
 }
 
 func (r *Race) results() []ResultRow {
-	rows := make([]ResultRow, 0, numCars)
-	for _, c := range r.byPos() {
-		total := 0
-		if c.Finished {
-			total = (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs
+	// Finishers: laps completed desc, then total time with penalties asc. The unfinished follow in road order.
+	total := func(c *Car) int { return (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs }
+	cs := r.byPos()
+	sort.SliceStable(cs, func(i, j int) bool {
+		a, b := cs[i], cs[j]
+		if a.Finished != b.Finished {
+			return a.Finished
 		}
-		rows = append(rows, ResultRow{Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
-			Laps: c.Lap, TotalMs: total, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot})
-	}
-	// Penalties re-order the finishers; the unfinished keep their road order behind them.
-	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := rows[i], rows[j]
-		if (a.TotalMs > 0) != (b.TotalMs > 0) {
-			return a.TotalMs > 0
+		if !a.Finished {
+			return false
 		}
-		return a.TotalMs > 0 && a.TotalMs < b.TotalMs
+		if a.Lap != b.Lap {
+			return a.Lap > b.Lap
+		}
+		return total(a) < total(b)
 	})
-	for i := range rows {
-		rows[i].Pos = i + 1
-		r.car(rows[i].Car).Pos = i + 1
+	rows := make([]ResultRow, 0, numCars)
+	for i, c := range cs {
+		t := 0
+		if c.Finished {
+			t = total(c)
+		}
+		c.Pos = i + 1
+		rows = append(rows, ResultRow{Pos: i + 1, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
+			Laps: c.Lap, TotalMs: t, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot})
 	}
 	return rows
 }
