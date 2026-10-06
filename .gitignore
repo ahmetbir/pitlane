@@ -1,0 +1,12 @@
+.superpowers/
+.tools/
+client/node_modules/
+cmd/pitlane/web/*
+!cmd/pitlane/web/.gitkeep
+dist/
+# deployment settings and secrets never enter git
+deploy/deploy.env
+.env
+.env.*
+*.pem
+*.key

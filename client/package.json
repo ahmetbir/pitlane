@@ -1,0 +1,21 @@
+{
+  "name": "pitlane-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/clean-web.mjs && esbuild src/main.ts --bundle --minify --target=es2022 --define:DEBUG=false --outfile=../cmd/pitlane/web/app.js && cp -R static/. ../cmd/pitlane/web/",
+    "watch": "esbuild src/main.ts --bundle --sourcemap --target=es2022 --define:DEBUG=true --outfile=../cmd/pitlane/web/app.js --watch",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --test 'src/**/*.test.ts'"
+  },
+  "dependencies": {
+    "roomkit": "git+https://github.com/ahmetbir/roomkit.git#v0.2.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/three": "^0.186.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.8"
+  }
+}
