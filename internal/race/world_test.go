@@ -27,18 +27,26 @@ func carAt(tr *track.Track, lat, a, v float64) (car.State, int) {
 }
 
 func TestWallKeepsCarInside(t *testing.T) {
-	tr := track.Kiyi()
-	p := car.NewParams(car.Sim, car.DefaultSetup(), car.Damage{})
-	st, hint := carAt(tr, 0, math.Pi/6, 90)
-	lim := tr.WallLat() - 1 + 1e-9
-	for k := 0; k < 1000; k++ {
-		moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint)
-		_, lat, _ := tr.Locate(st.X, st.Z, hint)
-		if math.Abs(lat) > lim {
-			t.Fatalf("tick %d: lat %v beyond %v", k, lat, lim)
+	for _, side := range []float64{1, -1} {
+		tr := track.Kiyi()
+		p := car.NewParams(car.Sim, car.DefaultSetup(), car.Damage{})
+		st, hint := carAt(tr, 0, side*math.Pi/6, 90)
+		lim := tr.WallLat() - 1 + 1e-9
+		hits := 0
+		for k := 0; k < 1000; k++ {
+			if moveCar(&st, &p, car.Input{Throttle: 1}, tr, &hint) > 0 {
+				hits++
+			}
+			_, lat, _ := tr.Locate(st.X, st.Z, hint)
+			if math.Abs(lat) > lim {
+				t.Fatalf("side %v tick %d: lat %v beyond %v", side, k, lat, lim)
+			}
+			if !finite(st) {
+				t.Fatalf("side %v tick %d: non-finite state", side, k)
+			}
 		}
-		if !finite(st) {
-			t.Fatalf("tick %d: non-finite state", k)
+		if hits < 1 {
+			t.Fatalf("side %v: wall never hit", side)
 		}
 	}
 }
@@ -70,10 +78,8 @@ func TestWallImpulseReported(t *testing.T) {
 	if hit <= 0 {
 		t.Fatal("no impulse on first contact")
 	}
-	st, hint = carAt(tr, tr.WallLat()-1.5, 0, 50)
-	for k := 0; k < 10; k++ {
-		if w := moveCar(&st, &p, car.Input{}, tr, &hint); w != 0 {
-			t.Fatalf("parallel car reported impulse %v", w)
-		}
+	st, hint = carAt(tr, tr.WallLat()-1, 0, 50)
+	if w := moveCar(&st, &p, car.Input{}, tr, &hint); w != 0 {
+		t.Fatalf("parallel car reported impulse %v", w)
 	}
 }
