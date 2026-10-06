@@ -52,6 +52,7 @@ type Car struct {
 	slot    track.Pose
 	brain   bot.Brain
 	slow    int // consecutive racing ticks below resetSpeed (marshal reset)
+	hold    int // ticks a due reset has waited for traffic
 }
 
 type LapEvent struct {
@@ -268,23 +269,26 @@ func (r *Race) spots() (sp [numCars]spot) {
 }
 
 // ahead returns, for car i, the nearest car within aheadRange ahead along the track and
-// aheadLat beside it, and the nearest standing car (below standSpeed) within standRange and
-// aheadLat, so a bot at speed sees a stopped car in time to go round it.
-func (r *Race) ahead(i int, sp *[numCars]spot) (near, stand *car.State) {
-	nd, sd := aheadRange, standRange
+// aheadLat beside it (stored in nb), and into buf every standing car (below standSpeed) within standRange
+// ahead, wherever it is across the track: the bot decides which are on its path, and a bot at
+// speed sees a stopped car in time to go round it.
+func (r *Race) ahead(i int, sp *[numCars]spot, nb *bot.Other, buf *[numCars]bot.Other) (near *bot.Other, stand []bot.Other) {
+	nd := aheadRange
+	stand = buf[:0]
 	for j, o := range r.cars {
-		if j == i || math.Abs(sp[j].lat-sp[i].lat) > aheadLat {
+		if j == i {
 			continue
 		}
 		d := math.Mod(sp[j].s-sp[i].s+r.tr.Length, r.tr.Length)
 		if d <= 0 {
 			continue
 		}
-		if d <= nd {
-			near, nd = &o.St, d
+		ob := bot.Other{St: &o.St, S: sp[j].s, Lat: sp[j].lat}
+		if d <= nd && math.Abs(sp[j].lat-sp[i].lat) <= aheadLat {
+			*nb, near, nd = ob, nb, d
 		}
-		if d <= sd && o.St.Speed() < standSpeed {
-			stand, sd = &o.St, d
+		if d <= standRange && o.St.Speed() < standSpeed {
+			stand = append(stand, ob)
 		}
 	}
 	return near, stand
@@ -296,38 +300,110 @@ func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
 		return car.Input{}
 	}
 	c := r.cars[i]
-	near, stand := r.ahead(i, sp)
+	var nb bot.Other
+	var buf [numCars]bot.Other
+	near, stand := r.ahead(i, sp, &nb, &buf)
 	return c.brain.Drive(&c.St, &c.P, c.Seg, near, stand)
 }
 
 // marshal puts every unfinished car that is not drivable and has been slower than resetSpeed
-// for resetTicks racing ticks back on the racing line at its own s, pointing down the track and
-// at rest (there is no reverse gear: a car nose-first against the wall cannot leave by itself).
-// Lap, sector and timing state are kept; the time lost is the penalty. A due reset waits
-// (and is retried every tick) while traffic would arrive on top of it: see clearForReset.
+// for resetTicks racing ticks back on the racing line, pointing down the track and at rest
+// (there is no reverse gear: a car nose-first against the wall cannot leave by itself). The
+// drop spot is its own s or the nearest spot up to dropBack behind it with no car within
+// dropFree (see dropSpot). Lap and timing state are kept; the time lost is the penalty. A due
+// reset waits (retried every tick) while traffic would arrive on top of it (clearForReset), for
+// holdMax ticks at most: then the car goes to the asphalt edge with fewer cars, traffic or not.
+// Cars are reset in ID order, each against the positions of the ones reset before it.
 func (r *Race) marshal() (reset []CarID) {
 	for _, c := range r.cars {
 		if c.Finished || c.St.Speed() >= resetSpeed || r.drivable(c) {
-			c.slow = 0
+			c.slow, c.hold = 0, 0
 			continue
 		}
 		if c.slow = min(c.slow+1, resetTicks); c.slow < resetTicks {
 			continue
 		}
-		if !r.clearForReset(c) {
+		edge := c.hold >= holdMax
+		_, _, s0 := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
+		i, lat, ok := r.dropSpot(c, s0, edge)
+		if !ok || (!edge && !r.clearForReset(c, r.tr.Segs[i].S)) {
 			r.held++
+			c.hold++
 			continue
 		}
-		i, _, s := r.tr.Locate(c.St.X, c.St.Z, c.Seg)
-		x, z := r.tr.Point(s, r.tr.Line[i])
 		g := r.tr.Segs[i]
+		x, z := r.tr.Point(g.S, lat)
 		c.St = car.State{X: x, Z: z, H: math.Atan2(g.TZ, g.TX), HX: g.TX, HZ: g.TZ, Gear: 1, Dmg: c.St.Dmg}
 		c.Seg, _, c.S = r.tr.Locate(x, z, i)
+		if c.S-s0 > r.tr.Length/2 { // back over the line: as when driven back over it
+			c.rankLap--
+		} else {
+			r.advanceSector(c, s0)
+		}
 		c.brain.Reset()
-		c.slow = 0
+		c.slow, c.hold = 0, 0
 		reset = append(reset, c.ID)
 	}
 	return reset
+}
+
+// dropSpot is the seg and lat c is reset to: the racing line (edge: the asphalt edge on the
+// side with fewer cars within resetBehind, the side away from the line on a tie) at s0 or
+// dropStep, 2·dropStep … up to dropBack behind it, the first with no other car within dropFree.
+func (r *Race) dropSpot(c *Car, s0 float64, edge bool) (i int, lat float64, ok bool) {
+	n, L := len(r.tr.Segs), r.tr.Length
+	for k := 0.0; k <= dropBack; k += dropStep {
+		i = int(math.Round(math.Mod(s0-k+L, L)/L*float64(n))) % n
+		g := &r.tr.Segs[i]
+		lat = r.tr.Line[i]
+		if edge {
+			lat = r.edgeSide(c, g.S, lat) * (r.tr.Width/2 - edgeIn)
+		}
+		if x, z := r.tr.Point(g.S, lat); r.free(c, x, z) {
+			return i, lat, true
+		}
+	}
+	return 0, 0, false
+}
+
+// edgeSide is +1 (left) or −1: the side of the track with fewer other cars within resetBehind
+// of s; on a tie the side away from the racing line (at lat line).
+func (r *Race) edgeSide(c *Car, s, line float64) float64 {
+	L := r.tr.Length
+	var left, right int
+	for _, o := range r.cars {
+		if o == c {
+			continue
+		}
+		_, lat, os := r.tr.Locate(o.St.X, o.St.Z, o.Seg)
+		if math.Abs(math.Remainder(os-s, L)) > resetBehind {
+			continue
+		}
+		if lat >= 0 {
+			left++
+		} else {
+			right++
+		}
+	}
+	switch {
+	case left < right:
+		return 1
+	case right < left:
+		return -1
+	case line > 0:
+		return -1
+	}
+	return 1
+}
+
+// free: no car but c has its centre within dropFree of (x, z).
+func (r *Race) free(c *Car, x, z float64) bool {
+	for _, o := range r.cars {
+		if o != c && math.Hypot(o.St.X-x, o.St.Z-z) < dropFree {
+			return false
+		}
+	}
+	return true
 }
 
 // drivable: the car can drive away on its own (no reverse gear needed): on the asphalt and
@@ -340,15 +416,15 @@ func (r *Race) drivable(c *Car) bool {
 }
 
 // clearForReset: no other unfinished car that is moving (resetSpeed or faster) is within
-// resetBehind behind c along the track or within resetAhead ahead of it. Standing cars are
-// not traffic: two stuck cars must not hold each other.
-func (r *Race) clearForReset(c *Car) bool {
+// resetBehind behind s along the track or within resetAhead ahead of it. Standing cars are
+// not traffic (two stuck cars must not hold each other); dropSpot keeps the spot clear of them.
+func (r *Race) clearForReset(c *Car, s float64) bool {
 	L := r.tr.Length
 	for _, o := range r.cars {
 		if o == c || o.Finished || o.St.Speed() < resetSpeed {
 			continue
 		}
-		if ahead := math.Mod(o.S-c.S+L, L); ahead <= resetAhead || L-ahead <= resetBehind {
+		if ahead := math.Mod(o.S-s+L, L); ahead <= resetAhead || L-ahead <= resetBehind {
 			return false
 		}
 	}

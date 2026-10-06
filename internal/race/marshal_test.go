@@ -199,8 +199,13 @@ func TestHairpinQueueClears(t *testing.T) {
 	for _, mode := range []Contact{Soft, Full} {
 		r := New(Settings{Handling: car.Sim, Contact: mode, Laps: 3, Seed: 3}, track.Kiyi())
 		r.phase, r.raceStart = Racing, r.tick
-		id, _ := r.Seat("idle", "")
-		for i, c := range r.cars {
+		id, _ := r.Seat("idle", "") // in Racing the last-placed bot's car: put it at the front
+		slot := 1
+		for _, c := range r.cars {
+			i := 0
+			if c.ID != id {
+				i, slot = slot, slot+1
+			}
 			s := 1130 - 8*float64(i)
 			put(r, c, s, r.tr.Line[int(s/2)], 0)
 			c.St.Gear = 1
@@ -228,5 +233,99 @@ func TestHairpinQueueClears(t *testing.T) {
 			}
 		}
 		t.Logf("%v: resets %v, held %d", mode, resets, r.held)
+	}
+}
+
+// stuckOnGrass parks c at rest on the grass at (s, lat), facing down the track: not drivable,
+// so the marshal counts it.
+func stuckOnGrass(r *Race, c *Car, s, lat float64) {
+	put(r, c, s, lat, 0)
+	c.St.Gear = 1
+	c.Finished = false
+	c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
+}
+
+func dist(a, b *Car) float64 { return math.Hypot(a.St.X-b.St.X, a.St.Z-b.St.Z) }
+
+// TestMarshalHoldIsBounded: a car crawling 60 m behind a stuck one, every tick, holds its reset
+// holdMax ticks and no longer; then the stuck car goes to the asphalt edge with fewer cars,
+// pointing down the track, edgeIn inside the edge.
+func TestMarshalHoldIsBounded(t *testing.T) {
+	r, a := marshalRaceIn(Full)
+	noseIn(r, a, 300)
+	b := r.cars[1]
+	b.Finished = false
+	got := -1
+	for k := 1; k <= resetTicks+holdMax+5 && got < 0; k++ {
+		put(r, b, 240, -4, 2)
+		b.Seg, _, b.S = r.tr.Locate(b.St.X, b.St.Z, -1)
+		if slices.Contains(r.Step(nil).Reset, a.ID) {
+			got = k
+		}
+	}
+	if got != resetTicks+holdMax {
+		t.Fatalf("reset at tick %d, want %d", got, resetTicks+holdMax)
+	}
+	i, lat, _ := r.tr.Locate(a.St.X, a.St.Z, a.Seg)
+	if math.Abs(math.Abs(lat)-(r.tr.Width/2-edgeIn)) > 0.05 || a.St.HX*r.tr.Segs[i].TX+a.St.HZ*r.tr.Segs[i].TZ < 0.999 {
+		t.Fatalf("after the held reset: lat %.2f, heading·tangent %.3f", lat, a.St.HX*r.tr.Segs[i].TX+a.St.HZ*r.tr.Segs[i].TZ)
+	}
+	if lat < 0 { // b crawls on the right (lat −4): the left has fewer cars
+		t.Errorf("dropped on the right (lat %.2f), where b is", lat)
+	}
+}
+
+// TestMarshalDropsOnAFreeSpot: a reset never lands within dropFree of another car: two cars
+// due on the same tick side by side, a stuck car beside an idle human on the racing line, and
+// a stuck car just past the start line with that line's spot taken (it goes back over the
+// line and its progress stays continuous).
+func TestMarshalDropsOnAFreeSpot(t *testing.T) {
+	for _, mode := range []Contact{Soft, Full} {
+		r, a := marshalRaceIn(mode)
+		b := r.cars[1]
+		stuckOnGrass(r, a, 500, 10)
+		stuckOnGrass(r, b, 502, 13)
+		at := -1
+		for k := 1; k <= resetTicks && at < 0; k++ {
+			if ev := r.Step(nil); len(ev.Reset) > 0 {
+				at = k
+				if !slices.Equal(ev.Reset, []CarID{a.ID, b.ID}) {
+					t.Fatalf("%v: reset %v", mode, ev.Reset)
+				}
+			}
+		}
+		if at != resetTicks || dist(a, b) < dropFree {
+			t.Fatalf("%v: reset at tick %d, %.2f m apart", mode, at, dist(a, b))
+		}
+	}
+
+	r, a := marshalRaceIn(Full)
+	b := r.cars[1]
+	stuckOnGrass(r, a, 600, 12)
+	stuckOnGrass(r, b, 600, r.tr.Line[300]) // standing straight on the line: never reset itself
+	for k := 1; k <= resetTicks; k++ {
+		r.Step(nil)
+	}
+	if d := dist(a, b); d < dropFree || a.S >= b.S || a.S < 600-dropBack {
+		t.Fatalf("beside the idle car: dropped %.2f m from it at s %.1f", d, a.S)
+	}
+	if b.slow != 0 || b.St.Dmg != (car.Damage{}) || a.St.Dmg != (car.Damage{}) {
+		t.Fatalf("idle car slow %d, damage %+v %+v", b.slow, a.St.Dmg, b.St.Dmg)
+	}
+
+	r, a = marshalRaceIn(Ghost)
+	b = r.cars[1]
+	stuckOnGrass(r, a, 4, 12)
+	stuckOnGrass(r, b, 4, r.tr.Line[2])
+	a.rankLap, a.Lap, a.Sector = 1, 1, 0 // it has just completed lap 1
+	before := r.progress(a)
+	for k := 1; k <= resetTicks; k++ {
+		r.Step(nil)
+	}
+	if d := dist(a, b); d < dropFree || a.S < r.tr.Length-dropBack || a.rankLap != 0 || a.Lap != 1 {
+		t.Fatalf("over the line: %.2f m from b at s %.1f, rankLap %d lap %d", d, a.S, a.rankLap, a.Lap)
+	}
+	if back := before - r.progress(a); back <= 0 || back > dropBack+1 {
+		t.Fatalf("progress moved %.1f m back", back)
 	}
 }

@@ -66,4 +66,9 @@ const (
 	resetBehind     = 80.0               // m: a moving car this close behind holds a reset
 	resetAhead      = 6.0                // m: any car this close ahead holds a reset
 	drivableCos     = 0.7071067811865476 // cos 45°: heading within this of the track direction is drivable
+	holdMax         = 10 * tps           // ticks a due reset waits for traffic; then it goes to the edge
+	dropFree        = 8.0                // m: no car centre this close to a reset's drop spot
+	dropStep        = 10.0               // m: drop spots tried this far apart, back from the car
+	dropBack        = 200.0              // m: … up to this far
+	edgeIn          = 1.5                // m: an edge drop's centre inside the asphalt edge
 )
