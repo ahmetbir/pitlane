@@ -73,6 +73,7 @@ type ResultRow struct {
 	BestMs    int
 	PenaltyMs int
 	Pilot     string
+	Finished  bool // crossed the line before the finish window closed; false = DNF
 }
 
 type Events struct {
@@ -569,7 +570,7 @@ func (r *Race) results() []ResultRow {
 		}
 		c.Pos = i + 1
 		rows = append(rows, ResultRow{Pos: i + 1, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
-			Laps: c.Lap, TotalMs: t, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot})
+			Laps: c.Lap, TotalMs: t, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot, Finished: c.Finished})
 	}
 	return rows
 }

@@ -224,25 +224,38 @@ func (m *Match) Label() string { return m.set.Handling.String() + "/" + m.set.Co
 
 // record counts a finished race for every human with a pilot; bots and
 // pilotless humans never, and a human who left mid-race is a bot again by now.
+// A DNF keeps its laps and best valid lap but is no race, win or podium. A
+// pilot in two seats (two tabs) counts once, by the better position.
 func (m *Match) record(rows []race.ResultRow) {
 	if m.stats == nil {
 		return
 	}
+	best := make(map[string]race.ResultRow, len(rows))
 	for _, r := range rows {
-		if !r.Human || r.Pilot == "" {
+		if b, ok := best[r.Pilot]; r.Human && r.Pilot != "" && (!ok || r.Pos < b.Pos) {
+			best[r.Pilot] = r
+		}
+	}
+	for _, r := range rows { // result order, so records are deterministic
+		if b, ok := best[r.Pilot]; !ok || b.Car != r.Car {
 			continue
 		}
-		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Races: 1, Laps: r.Laps}
-		if r.Pos == 1 {
-			d.Wins = 1
-		}
-		if r.Pos <= 3 {
-			d.Podiums = 1
+		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Laps: r.Laps}
+		if r.Finished {
+			d.Races = 1
+			if r.Pos == 1 {
+				d.Wins = 1
+			}
+			if r.Pos <= 3 {
+				d.Podiums = 1
+			}
 		}
 		if r.BestMs > 0 {
 			d.BestMs = map[string]int{trackName: r.BestMs}
 		}
-		m.stats.Record(d)
+		if d.Races > 0 || d.Laps > 0 || d.BestMs != nil { // a DNF without a lap is nothing
+			m.stats.Record(d)
+		}
 	}
 }
 

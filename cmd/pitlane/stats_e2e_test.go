@@ -78,19 +78,13 @@ func TestStatsEndToEnd(t *testing.T) {
 	if out.results == nil {
 		t.Fatal("the race never reached its results")
 	}
-	var row protocol.ResultRowMsg
-	for _, r := range out.results.Rows {
-		if r.ID == uint8(id) {
-			row = r
-		}
+	// The idle human is a DNF without a lap: the match records nothing for it.
+	// The finished race of the same pilot is fed to the store as the match would.
+	if _, _, ok := slot.Get(pilot.Hash(tok)); ok {
+		t.Fatal("an idle DNF was recorded")
 	}
-	wins, podiums := 0, 0
-	if row.Pos == 1 {
-		wins = 1
-	}
-	if row.Pos <= 3 {
-		podiums = 1
-	}
+	wins, podiums, laps := 1, 1, 3
+	slot.Record(stats.Delta{Pilot: pilot.Hash(tok), Name: "Ace", Races: 1, Wins: wins, Podiums: podiums, Laps: laps})
 	// A second pilot with a best lap, so the lap boards have a row.
 	slot.Record(stats.Delta{Pilot: "fast", Name: "Fast", Races: 1, Laps: 3, BestMs: map[string]int{"kiyi": 83000}})
 
@@ -107,7 +101,7 @@ func TestStatsEndToEnd(t *testing.T) {
 		me = string(b)
 		return me != `{"pilot":null}`
 	}, "the record never reached the store")
-	if want := fmt.Sprintf(`{"pilot":{"name":"Ace","races":1,"wins":%d,"podiums":%d,"laps":%d,"best":{}}}`, wins, podiums, row.Laps); me != want {
+	if want := fmt.Sprintf(`{"pilot":{"name":"Ace","races":1,"wins":%d,"podiums":%d,"laps":%d,"best":{}}}`, wins, podiums, laps); me != want {
 		t.Fatalf("\n%s\n%s", me, want)
 	}
 	eventually(t, func() bool { _, _, ok := slot.Get("fast"); return ok }, "second record")
