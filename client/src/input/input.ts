@@ -9,16 +9,18 @@ const STEER_RETURN = 5; // per second toward 0
 const THROTTLE_RAMP_S = 0.15;
 const BRAKE_RAMP_S = 0.1;
 const DEADZONE = 0.08;
-const BUTTON_EPS = 0.05;
+const TRIGGER_DEADZONE = 0.05;
 const MOVE_EPS = 0.02;
 const GAMEPAD_HOLD_S = 2;
 
-export type PadLike = { axes: readonly number[]; buttons: readonly { value: number; pressed?: boolean }[] } | null;
+export type PadLike = { mapping?: string; axes: readonly number[]; buttons: readonly { value: number; pressed?: boolean }[] } | null;
 
 export type ControlsDeps = {
   /** Key events source (window). */
   target: { addEventListener(type: string, fn: (e: any) => void): void; removeEventListener(type: string, fn: (e: any) => void): void };
   getGamepads: () => ArrayLike<PadLike>;
+  /** document: hidden state releases everything. */
+  doc?: { hidden: boolean; addEventListener(type: string, fn: () => void): void; removeEventListener(type: string, fn: () => void): void };
   /** Seconds. */
   now: () => number;
 };
@@ -36,10 +38,10 @@ function typing(t: unknown): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }
 
-function rescale(v: number): number {
+function rescale(v: number, dz: number): number {
   const a = Math.abs(v);
-  if (!(a > DEADZONE)) return 0;
-  return Math.sign(v) * Math.min((a - DEADZONE) / (1 - DEADZONE), 1);
+  if (!(a > dz)) return 0;
+  return Math.sign(v) * Math.min((a - dz) / (1 - dz), 1);
 }
 
 export class Controls {
@@ -49,10 +51,11 @@ export class Controls {
   private br = 0;
   private st = 0;
   private padActiveUntil = -Infinity;
-  private prev: number[] = [];
+  private prev: number[] | null = null;
   private readonly down = (e: KeyboardEvent) => this.key(e, true);
   private readonly up = (e: KeyboardEvent) => this.key(e, false);
   private readonly blur = () => this.release();
+  private readonly vis = () => { if (this.deps.doc?.hidden) this.release(); };
 
   private readonly deps: ControlsDeps;
 
@@ -61,12 +64,14 @@ export class Controls {
     deps.target.addEventListener("keydown", this.down);
     deps.target.addEventListener("keyup", this.up);
     deps.target.addEventListener("blur", this.blur);
+    deps.doc?.addEventListener("visibilitychange", this.vis);
   }
 
   dispose(): void {
     this.deps.target.removeEventListener("keydown", this.down);
     this.deps.target.removeEventListener("keyup", this.up);
     this.deps.target.removeEventListener("blur", this.blur);
+    this.deps.doc?.removeEventListener("visibilitychange", this.vis);
     this.release();
   }
 
@@ -90,7 +95,7 @@ export class Controls {
       this.st = pad.st;
       return wireInput({ throttle: this.th, brake: this.br, steer: this.st });
     }
-    const dt = Math.max(0, dtS);
+    const dt = Number.isFinite(dtS) && dtS > 0 ? dtS : 0;
     this.th = this.held.has("up") ? Math.min(1, this.th + dt / THROTTLE_RAMP_S) : 0;
     this.br = this.held.has("down") ? Math.min(1, this.br + dt / BRAKE_RAMP_S) : 0;
     const dir = (this.held.has("left") ? 1 : 0) - (this.held.has("right") ? 1 : 0);
@@ -103,8 +108,12 @@ export class Controls {
 
   private key(e: KeyboardEvent, isDown: boolean): void {
     const k = CODES[e.code];
+    const space = e.code === "Space";
+    if (!k && !space) return;
+    const mod = e.ctrlKey || e.metaKey || e.altKey;
+    if (isDown && (mod || typing(e.target))) return;
+    if (isDown && !e.shiftKey && (space || e.code.startsWith("Arrow"))) e.preventDefault?.();
     if (!k) return;
-    if (isDown && typing(e.target)) return;
     if (isDown) {
       if (k === "cam" && !this.held.has(k)) this.camPressed = true;
       this.held.add(k);
@@ -116,22 +125,36 @@ export class Controls {
     this.th = this.br = this.st = 0;
   }
 
-  /** The active pad's input, or null when no pad moved within GAMEPAD_HOLD_S. */
+  /** The active pad's input, or null when no standard pad moved within GAMEPAD_HOLD_S. */
   private pollPad(): { th: number; br: number; st: number } | null {
     const now = this.deps.now();
     let pad: PadLike = null;
-    const pads = this.deps.getGamepads();
-    for (let i = 0; i < pads.length; i++) if (pads[i]) { pad = pads[i]; break; }
-    if (!pad) return null;
-    const cur = [...pad.axes, ...pad.buttons.map((b) => b.value)];
-    const moved = cur.some((v, i) => Math.abs(v - (this.prev[i] ?? 0)) > MOVE_EPS)
-      || (pad.axes.some((a) => Math.abs(a) > DEADZONE) || pad.buttons.some((b) => b.value > BUTTON_EPS));
+    try {
+      const pads = this.deps.getGamepads();
+      for (let i = 0; i < pads.length; i++) {
+        const p = pads[i];
+        if (p && p.mapping === "standard") { pad = p; break; }
+      }
+    } catch {
+      pad = null;
+    }
+    if (!pad) {
+      this.prev = null;
+      this.padActiveUntil = -Infinity;
+      return null;
+    }
+    const cur = [pad.axes[0] ?? 0, pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0].map((v) => (Number.isFinite(v) ? v : 0));
+    const prev = this.prev ?? cur;
     this.prev = cur;
+    const moved = Math.abs(cur[0]) > DEADZONE || cur[1] > TRIGGER_DEADZONE || cur[2] > TRIGGER_DEADZONE
+      || cur.some((v, i) => Math.abs(v - prev[i]) > MOVE_EPS);
     if (moved) this.padActiveUntil = now + GAMEPAD_HOLD_S;
     if (now > this.padActiveUntil) return null;
-    const rt = pad.buttons[7]?.value ?? 0;
-    const lt = pad.buttons[6]?.value ?? 0;
-    return { th: rt, br: lt, st: 0 - rescale(pad.axes[0] ?? 0) }; // stick right = +axis = negative st
+    return {
+      th: rescale(cur[2], TRIGGER_DEADZONE),
+      br: rescale(cur[1], TRIGGER_DEADZONE),
+      st: 0 - rescale(cur[0], DEADZONE), // stick right = +axis = negative st
+    };
   }
 }
 
@@ -139,6 +162,7 @@ export class Controls {
 export function browserControls(): Controls {
   return new Controls({
     target: window,
+    doc: document,
     getGamepads: () => navigator.getGamepads(),
     now: () => performance.now() / 1000,
   });
