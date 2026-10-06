@@ -3,6 +3,7 @@ package race
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 
 	"github.com/ahmetbir/pitlane/internal/bot"
@@ -53,6 +54,30 @@ type Car struct {
 	brain   bot.Brain
 	slow    int // consecutive racing ticks below resetSpeed (marshal reset)
 	hold    int // ticks a due reset has waited for traffic
+
+	// Credit: what the seated driver has earned since taking the car over.
+	credTick int  // tick of the takeover; laps started at or after it are the driver's own
+	credLap  int  // laps completed at the takeover
+	ownBest  int  // ms: best valid lap started at or after credTick, 0 = none
+	ownFull  bool // completed a lap started at or after credTick
+
+	// Reconnect: the pilot who left this car during a session, and when.
+	lastPilot string
+	lastTick  int
+	lastSetup car.Setup
+}
+
+// Credit is what the pilot in a car has earned since taking it over: laps
+// completed since then, the best valid lap among the laps started since then,
+// and whether one full lap was driven (a finish counts as a race only then).
+type Credit struct {
+	Laps   int
+	BestMs int
+	Full   bool
+}
+
+func (c *Car) credit() Credit {
+	return Credit{Laps: c.Lap - c.credLap, BestMs: c.ownBest, Full: c.ownFull}
 }
 
 type LapEvent struct {
@@ -74,6 +99,7 @@ type ResultRow struct {
 	PenaltyMs int
 	Pilot     string
 	Finished  bool // crossed the line before the finish window closed; false = DNF
+	Credit    Credit
 }
 
 type Events struct {
@@ -81,6 +107,7 @@ type Events struct {
 	LightsOut    bool
 	Laps         []LapEvent
 	Results      []ResultRow
+	Finished     []ResultRow // cars that took the flag this tick, at their position then
 	PhaseChanged bool
 	WingLost     []CarID // cars whose front wing came off this tick (full contact)
 	Reset        []CarID // cars the marshals put back on the racing line this tick
@@ -141,6 +168,7 @@ func (r *Race) place(c *Car, p track.Pose) {
 	c.Lap, c.Sector, c.LapStart = 0, 0, r.tick
 	c.Best, c.Last, c.OffTicks = 0, 0, 0
 	c.LapValid, c.Finished, c.FinishTick, c.jumped, c.rankLap, c.slow = true, false, 0, false, 0, 0
+	c.credLap, c.ownBest, c.ownFull, c.lastPilot = 0, 0, false, ""
 }
 
 func (r *Race) humans() (n int, allReady bool) {
@@ -155,8 +183,18 @@ func (r *Race) humans() (n int, allReady bool) {
 }
 
 // Seat turns a bot car into a human one: the first bot on the grid and in results,
-// the last-placed bot while a race is running.
+// the last-placed bot while a race is running. A pilot who left a car within
+// reconnectTicks during this session gets that car back as it is, credit and all.
 func (r *Race) Seat(name, pilot string) (CarID, bool) {
+	if c := r.left(pilot); c != nil {
+		c.Driver = Driver{Human: true, Name: name, Pilot: pilot, Setup: c.lastSetup}
+		c.P = car.NewParams(r.set.Handling, c.lastSetup, c.St.Dmg)
+		c.lastPilot = ""
+		if r.creator == 0 {
+			r.creator = c.ID
+		}
+		return c.ID, true
+	}
 	var pick *Car
 	for _, c := range r.cars {
 		if c.Driver.Human {
@@ -167,8 +205,8 @@ func (r *Race) Seat(name, pilot string) (CarID, bool) {
 			if pick == nil {
 				pick = c
 			}
-		default:
-			if pick == nil || c.Pos > pick.Pos {
+		default: // the last-placed bot, a car kept for a reconnect only when there is no other
+			if pick == nil || r.kept(pick) && !r.kept(c) || r.kept(pick) == r.kept(c) && c.Pos > pick.Pos {
 				pick = c
 			}
 		}
@@ -176,6 +214,7 @@ func (r *Race) Seat(name, pilot string) (CarID, bool) {
 	if pick == nil {
 		return 0, false
 	}
+	pick.credTick, pick.credLap, pick.ownBest, pick.ownFull, pick.lastPilot = r.tick, pick.Lap, 0, false, ""
 	if n, _ := r.humans(); n == 0 && r.phase == Grid {
 		r.gridStart = r.tick
 	}
@@ -200,10 +239,13 @@ func (r *Race) Unseat(id CarID) {
 		return
 	}
 	keep := r.underway()
-	setup, p := c.Driver.Setup, c.P
+	setup, p, pilot := c.Driver.Setup, c.P, c.Driver.Pilot
 	r.makeBot(c)
 	if keep {
 		c.Driver.Setup, c.P = setup, p
+	}
+	if r.running() && pilot != "" {
+		c.lastPilot, c.lastTick, c.lastSetup = pilot, r.tick, setup
 	}
 	if r.creator == id {
 		r.creator = 0
@@ -236,6 +278,24 @@ func (r *Race) Start(id CarID) {
 		r.setPhase(Lights)
 		r.startEvent = true
 	}
+}
+
+// left is the bot car pilot left within reconnectTicks while a session runs, or nil.
+func (r *Race) left(pilot string) *Car {
+	if pilot == "" || !r.running() {
+		return nil
+	}
+	for _, c := range r.cars {
+		if r.kept(c) && c.lastPilot == pilot {
+			return c
+		}
+	}
+	return nil
+}
+
+// kept: c is a bot car held for the pilot who left it (see left).
+func (r *Race) kept(c *Car) bool {
+	return !c.Driver.Human && c.lastPilot != "" && r.tick-c.lastTick <= reconnectTicks
 }
 
 // running: a session is in progress (cars may be moving), so a seated car is taken as it is.
@@ -494,12 +554,13 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 				c.LapStart, c.Lap = r.tick, 0
 				c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
 				c.Sector, c.LapValid, c.OffTicks, c.rankLap, c.slow = 0, true, 0, 0, 0
+				c.credLap, c.ownBest, c.ownFull = 0, 0, false
 			}
 			r.setPhase(Racing)
 			ev.PhaseChanged = true
 		}
 	case Racing:
-		if r.finishing {
+		if r.finishing || elapsed >= r.set.Laps*lapCapTicks { // a race nobody completes ends too
 			r.setPhase(Finish)
 			ev.PhaseChanged = true
 		}
@@ -556,9 +617,13 @@ func (r *Race) byPos() []*Car {
 	return cs
 }
 
-func (r *Race) results() []ResultRow {
-	// Finishers: laps completed desc, then total time with penalties asc. The unfinished follow in road order.
-	total := func(c *Car) int { return (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs }
+// total is a finisher's race time with penalties, ms.
+func (r *Race) total(c *Car) int { return (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs }
+
+// order is the results order: finishers by laps completed desc, then total time asc;
+// the unfinished follow in road order.
+func (r *Race) order() []*Car {
+	total := r.total
 	cs := r.byPos()
 	sort.SliceStable(cs, func(i, j int) bool {
 		a, b := cs[i], cs[j]
@@ -573,17 +638,36 @@ func (r *Race) results() []ResultRow {
 		}
 		return total(a) < total(b)
 	})
+	return cs
+}
+
+func (r *Race) results() []ResultRow {
 	rows := make([]ResultRow, 0, numCars)
-	for i, c := range cs {
-		t := 0
-		if c.Finished {
-			t = total(c)
-		}
+	for i, c := range r.order() {
 		c.Pos = i + 1
-		rows = append(rows, ResultRow{Pos: i + 1, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
-			Laps: c.Lap, TotalMs: t, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot, Finished: c.Finished})
+		rows = append(rows, r.row(c, i+1))
 	}
 	return rows
+}
+
+// flagged is a row for every car in done, at its place in the results order now.
+func (r *Race) flagged(done []*Car) []ResultRow {
+	var rows []ResultRow
+	for i, c := range r.order() {
+		if slices.Contains(done, c) {
+			rows = append(rows, r.row(c, i+1))
+		}
+	}
+	return rows
+}
+
+func (r *Race) row(c *Car, pos int) ResultRow {
+	t := 0
+	if c.Finished {
+		t = r.total(c)
+	}
+	return ResultRow{Pos: pos, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human, Laps: c.Lap, TotalMs: t,
+		BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot, Finished: c.Finished, Credit: c.credit()}
 }
 
 // resetGrid lines the cars up in finishing order; humans keep their car and setup.

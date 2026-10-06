@@ -57,6 +57,8 @@ const (
 	lightTicks      = 1 * tps
 	lightCount      = 5
 	finishMaxTicks  = 45 * tps
+	lapCapTicks     = 240 * tps // Racing lasts Laps × this at most, then Finish
+	reconnectTicks  = 60 * tps  // a pilot who left gets the car back this long
 	resultsTicks    = 15 * tps
 	jumpStartMeters = 0.5
 	jumpStartPenMs  = 5000
