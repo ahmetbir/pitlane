@@ -62,3 +62,27 @@ test("wrong way: driving against the track direction", () => {
   assert.equal(rs.hud({ ...st, hx: seg.tx, hz: seg.tz }).wrongWay, false);
   assert.equal(rs.hud({ ...st, vx: 2 }).wrongWay, false, "creeping: no warning");
 });
+
+test("a reconnect into the same car keeps last, best and position; a new car starts over", () => {
+  const welcome = (car: number): ServerMsg => ({
+    t: "welcome", you: 1, code: "K3FQ", car, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: false,
+    setup: [6, 6, 58, 3, 5, 5], dmg: { fw: 0, rw: 0, su: 0 },
+  });
+  let own = 2;
+  const rs = new RaceState(tr, 3, () => own);
+  rs.apply(welcome(2));
+  rs.apply(snap("lights", 0, [row(2, L - 18)]));
+  rs.apply({ t: "lap", car: 2, lap: 1, ms: 81234, valid: true, best: 81234 });
+  rs.apply(snap("racing", 82000, [row(2, L + 30, 1)]));
+  rs.apply(welcome(2));
+  rs.apply(snap("racing", 90000, [row(2, L + 400, 1)]));
+  let v = rs.hud(null);
+  assert.equal(v.best, 81234);
+  assert.equal(v.current, 90000 - 81234, "the lap clock runs on");
+  own = 5;
+  rs.apply(welcome(5));
+  rs.apply(snap("racing", 91000, [row(2, L + 450, 1), row(5, L + 100, 1)]));
+  v = rs.hud(null);
+  assert.equal(v.best, 0, "another car: its history is unknown");
+  assert.equal(v.current, null);
+});

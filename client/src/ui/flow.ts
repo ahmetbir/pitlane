@@ -31,8 +31,9 @@ export function step(f: Flow, e: FlowEvent): Flow {
   const m = e.m;
   switch (m.t) {
     case "welcome":
-      // A new seat (first join or a reconnect): the phase is learnt again from the next snapshot.
-      return { ...f, view: "grid", phase: null };
+      // The first seat shows the grid until a snapshot says otherwise; a reconnect keeps the
+      // view (no grid flash mid-race, the garage stays open) and learns the phase again.
+      return { ...f, view: f.view === "connecting" ? "grid" : f.view, phase: null };
     case "snap": {
       const view = viewOf(m.phase, f.view);
       return view === f.view && m.phase === f.phase ? f : { ...f, view, phase: m.phase };

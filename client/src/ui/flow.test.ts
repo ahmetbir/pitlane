@@ -54,9 +54,11 @@ test("error codes end on the error card; nothing moves it afterwards", () => {
   assert.equal(run([{ t: "fatal", code: "racing", msg: "" }]).error?.code, "racing", "refused before any welcome");
 });
 
-test("a reconnect's welcome learns the phase again", () => {
+test("a reconnect's welcome keeps the view and learns the phase again", () => {
   const f = run([msg(welcome), msg(snap("racing")), msg(welcome)]);
+  assert.equal(f.view, "race", "no grid flash mid-race");
   assert.equal(f.phase, null);
+  assert.equal(run([msg(welcome), msg(snap("grid")), msg(welcome)]).view, "grid");
   assert.equal(run([msg(snap("racing"))], f).view, "race");
   assert.equal(run([{ t: "retry" }], f).view, "connecting");
 });

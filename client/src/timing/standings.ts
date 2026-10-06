@@ -1,10 +1,12 @@
-// Race order, gaps and sector times on the client, from snapshots alone.
+// Race order, gaps and sector times on the client, from snapshots (and the
+// server's results order once it is in).
 //
 // Each car's distance raced ("progress") is its track distance s unwrapped
 // across the line: the grid stands behind the line, so a car is at s − L
 // until it first crosses (progress 0), and lap n ends at progress n·L (lap 1
 // includes the run from the grid). Order: finished cars in the order they
-// were seen finishing, then progress, then id (as the server ranks).
+// were seen finishing (cars finishing in one snapshot, or first seen
+// finished, by distance driven), then progress, then id.
 //
 // Gaps are measured at timing lines every LINE_M: the car ahead's gap is how
 // long ago it passed the point where I am now; the car behind's is how long
@@ -82,6 +84,7 @@ export class Standings {
     this.clock = clock;
     const L = this.length;
     const seen = new Set<number>();
+    const done: number[] = []; // finished in this snapshot (or first seen finished)
     for (const m of marks) {
       seen.add(m.id);
       let r = this.cars.get(m.id);
@@ -100,10 +103,18 @@ export class Standings {
       }
       if (m.finished && !r.finished) {
         r.finished = true;
-        this.finishOrder.push(m.id);
+        done.push(m.id);
       }
     }
+    // Several in one snapshot: the one further on crossed first (finished cars drive on).
+    done.sort((a, b) => this.cars.get(b)!.progress - this.cars.get(a)!.progress || a - b);
+    this.finishOrder.push(...done);
     for (const id of this.cars.keys()) if (!seen.has(id)) this.cars.delete(id);
+  }
+
+  /** The server's final order (results): it replaces the order seen from snapshots. */
+  final(ids: readonly number[]): void {
+    this.finishOrder = ids.filter((id) => this.cars.has(id));
   }
 
   /** Car ids in race order. */

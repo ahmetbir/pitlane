@@ -100,3 +100,11 @@ test("a personal best slower than another car's sector is green; a car first see
   late.push(1500, [mark(1, 310)]);
   assert.equal(late.sectors()[0], "", "no start seen: the partial sector is not timed");
 });
+
+test("cars first seen finished rank by distance driven, then by the server's results", () => {
+  const st = new Standings(L, SECTORS, () => 9);
+  st.push(60000, [mark(1, 40, 3, true), mark(2, 300, 3, true), mark(3, 900, 2)]);
+  assert.deepEqual(st.order(), [2, 1, 3], "car 2 drove further past the line: it finished first");
+  st.final([1, 2, 3]);
+  assert.deepEqual(st.order(), [1, 2, 3]);
+});

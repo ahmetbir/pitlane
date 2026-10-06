@@ -24,6 +24,8 @@ export class RaceState {
   private phase: Phase | null = null;
   private ownRow: CarRow | null = null;
   private ownHint = -1;
+  private seat = 0;  // car id of the latest welcome
+  private clock = 0; // of the latest running snapshot
   private rows: CarRow[] = [];
 
   constructor(track: Track, laps: number, own: () => number) {
@@ -50,8 +52,16 @@ export class RaceState {
   apply(m: ServerMsg): void {
     switch (m.t) {
       case "welcome":
-        this.phase = null; // a new seat: the next snapshot starts over
-        this.ownRow = null;
+        // A reconnect into the same car keeps the race picture (laps, best, sectors);
+        // a new seat starts over with the next snapshot.
+        if (m.car !== this.seat) {
+          this.phase = null;
+          this.ownRow = null;
+        }
+        this.seat = m.car;
+        break;
+      case "results":
+        this.standings.final(m.rows.map((r) => r.id));
         break;
       case "grid":
         for (const c of m.cars) this.names.set(c.id, c.name);
@@ -75,11 +85,12 @@ export class RaceState {
       this.standings.reset();
       this.timer.reset(true);
       this.hints.clear();
-    } else if (phase !== "lights" && !running(prev)) {
+    } else if (phase !== "lights" && (!running(prev) || clock + 1000 < this.clock)) {
       // Seated mid-race (a takeover or reconnect): no start seen, the laps so far are the server's.
       this.standings.reset();
       this.timer.reset(false, this.ownRow?.lap ?? 0);
     }
+    this.clock = clock;
     this.standings.push(clock, rows.map((r) => ({ id: r.id, s: phase === "lights" ? this.locate(r) : r.s, lap: r.lap, finished: r.finished })));
     this.timer.snap(clock, this.standings.progressOf(this.own()));
   }
