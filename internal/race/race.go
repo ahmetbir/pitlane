@@ -90,6 +90,8 @@ type Race struct {
 	gridStart  int // tick the grid countdown began
 	holdTicks  int // lights-out hold
 	creator    CarID
+	raceStart  int  // tick of lights out
+	startEvent bool // Start changed the phase; surface it on the next Step
 	finishing  bool // leader has completed the race (set by timing)
 }
 
@@ -162,9 +164,13 @@ func (r *Race) Seat(name, pilot string) (CarID, bool) {
 	if n, _ := r.humans(); n == 0 && r.phase == Grid {
 		r.gridStart = r.tick
 	}
-	pick.Driver = Driver{Human: true, Name: name, Pilot: pilot, Setup: car.DefaultSetup()}
-	if r.phase != Racing && r.phase != Finish && r.phase != Lights {
-		pick.P = car.NewParams(r.set.Handling, pick.Driver.Setup, pick.St.Dmg)
+	setup := car.DefaultSetup()
+	if r.running() {
+		setup = pick.Driver.Setup // the car keeps the params it is driving with
+	}
+	pick.Driver = Driver{Human: true, Name: name, Pilot: pilot, Setup: setup}
+	if !r.running() {
+		pick.P = car.NewParams(r.set.Handling, setup, pick.St.Dmg)
 	}
 	if r.creator == 0 {
 		r.creator = pick.ID
@@ -178,10 +184,10 @@ func (r *Race) Unseat(id CarID) {
 	if c == nil || !c.Driver.Human {
 		return
 	}
-	running := r.phase == Racing || r.phase == Finish
+	keep := r.underway()
 	setup, p := c.Driver.Setup, c.P
 	r.makeBot(c)
-	if running {
+	if keep {
 		c.Driver.Setup, c.P = setup, p
 	}
 	if r.creator == id {
@@ -213,8 +219,15 @@ func (r *Race) Ready(id CarID, s car.Setup) {
 func (r *Race) Start(id CarID) {
 	if r.phase == Grid && id != 0 && id == r.creator {
 		r.setPhase(Lights)
+		r.startEvent = true
 	}
 }
+
+// running: a session is in progress (cars may be moving), so a seated car is taken as it is.
+func (r *Race) running() bool { return r.phase == Lights || r.phase == Racing || r.phase == Finish }
+
+// underway: the race itself has started; an unseated car keeps its setup.
+func (r *Race) underway() bool { return r.phase == Racing || r.phase == Finish }
 
 func (r *Race) car(id CarID) *Car {
 	if id < 1 || int(id) > numCars {
@@ -234,8 +247,10 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 	ev := Events{Lights: -1}
 	r.tick++
 	elapsed := r.tick - r.phaseStart
+	ev.PhaseChanged = r.startEvent
+	r.startEvent = false
 
-	if r.phase == Racing || r.phase == Finish {
+	if r.running() {
 		for _, c := range r.cars {
 			in := botInput(c)
 			if c.Driver.Human {
@@ -243,8 +258,10 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			}
 			moveCar(&c.St, &c.P, in, r.tr, &c.Seg)
 		}
-		r.resolveContacts()
-		r.timing()
+		if r.phase != Lights {
+			r.resolveContacts()
+			r.timing()
+		}
 	}
 
 	switch r.phase {
@@ -262,6 +279,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 		}
 		if elapsed >= lightCount*lightTicks+r.holdTicks {
 			ev.LightsOut = true
+			r.raceStart = r.tick
 			for _, c := range r.cars {
 				c.LapStart, c.Lap = r.tick, 0
 			}
@@ -331,16 +349,13 @@ func (r *Race) results() []ResultRow {
 	for i, c := range r.byPos() {
 		total := 0
 		if c.Finished {
-			total = (c.FinishTick-r.phaseStartOfRace())*1000/tps + c.PenaltyMs
+			total = (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs
 		}
 		rows = append(rows, ResultRow{Pos: i + 1, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
 			Laps: c.Lap, TotalMs: total, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot})
 	}
 	return rows
 }
-
-// phaseStartOfRace is the tick of lights out (every car's LapStart before its first lap).
-func (r *Race) phaseStartOfRace() int { return r.cars[0].LapStart }
 
 // resetGrid lines the cars up in finishing order; humans keep their car and setup.
 func (r *Race) resetGrid() {

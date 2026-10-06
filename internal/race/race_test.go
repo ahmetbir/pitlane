@@ -24,7 +24,7 @@ func TestBotOnlyRoomCyclesPhases(t *testing.T) {
 	if r.Phase() != Grid || len(r.Cars()) != 10 {
 		t.Fatal("start state")
 	}
-	for r.Phase() != Racing && r.Tick() < 18*60 {
+	for r.Phase() != Racing && r.Tick() < 17*60+12 {
 		r.Step(nil)
 	}
 	if r.Phase() != Racing {
@@ -36,7 +36,7 @@ func TestBotOnlyRoomCyclesPhases(t *testing.T) {
 		r.Step(nil)
 		seen[r.Phase()] = true
 	}
-	if !seen[Finish] && !seen[Results] || !seen[Results] || !seen[Grid] {
+	if !seen[Finish] || !seen[Results] || !seen[Grid] {
 		t.Fatalf("phases seen %v", seen)
 	}
 }
@@ -75,21 +75,155 @@ func TestLightsTiming(t *testing.T) {
 
 func TestJumpStartPenalty(t *testing.T) {
 	r := newRace(3)
-	for r.Phase() != Lights {
-		r.Step(nil)
+	a, _ := r.Seat("a", "")
+	b, _ := r.Seat("b", "")
+	r.Start(r.Creator())
+	for r.Phase() == Lights && r.Tick() < 200 {
+		var in map[CarID]car.Input
+		if r.Tick() >= 100 {
+			in = map[CarID]car.Input{a: {Throttle: 1}}
+		}
+		r.Step(in)
 	}
-	r.Cars()[2].St.X += 1
-	r.Cars()[4].St.X += 0.3
-	r.Step(nil)
-	r.Step(nil)
-	for i, c := range r.Cars() {
+	if r.Phase() != Lights {
+		t.Fatal("lights ended early")
+	}
+	for _, c := range r.Cars() {
 		want := 0
-		if i == 2 {
+		if c.ID == a {
 			want = 5000
 		}
 		if c.PenaltyMs != want {
 			t.Fatalf("car %d penalty %d want %d", c.ID, c.PenaltyMs, want)
 		}
+	}
+	_ = b
+	for i := 0; i < 5; i++ {
+		r.Step(map[CarID]car.Input{a: {Throttle: 1}})
+	}
+	if r.Cars()[0].PenaltyMs != 5000 {
+		t.Fatal("penalty applied more than once")
+	}
+}
+
+func TestGridIgnoresInput(t *testing.T) {
+	r := newRace(3)
+	a, _ := r.Seat("a", "")
+	x, z := r.Cars()[0].St.X, r.Cars()[0].St.Z
+	for i := 0; i < 60 && r.Phase() == Grid; i++ {
+		r.Step(map[CarID]car.Input{a: {Throttle: 1}})
+	}
+	if r.Cars()[0].St.X != x || r.Cars()[0].St.Z != z {
+		t.Fatal("car moved on the grid")
+	}
+}
+
+func TestStartSurfacesPhaseChange(t *testing.T) {
+	r := newRace(1)
+	r.Seat("a", "")
+	r.Seat("b", "")
+	r.Start(2) // not the creator
+	if r.Phase() != Grid {
+		t.Fatal("non-creator started")
+	}
+	if ev := r.Step(nil); ev.PhaseChanged {
+		t.Fatal("spurious phase change")
+	}
+	r.Start(1)
+	if r.Phase() != Lights {
+		t.Fatal("creator could not start")
+	}
+	if ev := r.Step(nil); !ev.PhaseChanged || ev.Lights != -1 {
+		t.Fatalf("event %+v", ev)
+	}
+	if ev := r.Step(nil); ev.PhaseChanged {
+		t.Fatal("phase change repeated")
+	}
+}
+
+func TestHumanGridTimer(t *testing.T) {
+	r := newRace(1)
+	r.Seat("a", "")
+	for i := 0; i < 30*60-1; i++ {
+		r.Step(nil)
+	}
+	if r.Phase() != Grid {
+		t.Fatal("left the grid early")
+	}
+	r.Step(nil)
+	if r.Phase() != Lights {
+		t.Fatal("30 s timer did not start the lights")
+	}
+}
+
+func TestCreatorHandover(t *testing.T) {
+	r := newRace(1)
+	a, _ := r.Seat("a", "")
+	b, _ := r.Seat("b", "")
+	r.Unseat(a)
+	if r.Creator() != b {
+		t.Fatalf("creator %d want %d", r.Creator(), b)
+	}
+	r.Unseat(b)
+	if r.Creator() != 0 {
+		t.Fatal("creator with no humans")
+	}
+}
+
+func TestHoldVariesBySeed(t *testing.T) {
+	seen := map[int]bool{}
+	for seed := uint64(1); seed <= 8; seed++ {
+		r := newRace(seed)
+		for r.Phase() != Lights {
+			r.Step(nil)
+		}
+		if r.holdTicks < 12 || r.holdTicks > 72 {
+			t.Fatalf("seed %d hold %d", seed, r.holdTicks)
+		}
+		seen[r.holdTicks] = true
+	}
+	if len(seen) < 2 {
+		t.Fatal("hold does not depend on seed")
+	}
+}
+
+func TestResultsResetsGrid(t *testing.T) {
+	r := newRace(1)
+	a, _ := r.Seat("a", "pil")
+	r.Ready(a, car.Setup{1, 2, 50, 2, 3, 4})
+	setup := r.Cars()[0].Driver.Setup
+	for r.Phase() != Racing {
+		r.Step(nil)
+	}
+	c := r.Cars()[0]
+	c.St.Dmg = car.Damage{FrontWing: 0.5}
+	c.PenaltyMs = 5000
+	r.finishAllForTest()
+	var rows []ResultRow
+	for r.Phase() != Grid {
+		if ev := r.Step(nil); ev.Results != nil {
+			rows = ev.Results
+		}
+	}
+	if len(rows) != 10 || rows[0].Pos != 1 {
+		t.Fatalf("rows %v", rows)
+	}
+	if !c.Driver.Human || c.ID != a || c.Driver.Setup != setup || c.Driver.Ready {
+		t.Fatalf("human not kept: %+v", c.Driver)
+	}
+	if c.PenaltyMs != 0 || c.St.Dmg != (car.Damage{}) || c.St.Speed() != 0 {
+		t.Fatal("penalty/damage/speed not cleared")
+	}
+}
+
+func TestMidRaceSeatKeepsSetup(t *testing.T) {
+	r := newRace(1)
+	for r.Phase() != Racing {
+		r.Step(nil)
+	}
+	id, _ := r.Seat("late", "")
+	if c := r.Cars()[id-1]; c.Driver.Setup != car.DefaultSetup() || c.P != car.NewParams(r.set.Handling, c.Driver.Setup, c.St.Dmg) {
+		t.Fatal("setup and params disagree")
 	}
 }
 
