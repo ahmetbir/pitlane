@@ -3,7 +3,8 @@ package car
 import "math"
 
 // Step advances st by DT. Only + − × ÷ sqrt and comparisons; every product
-// that feeds a sum is materialised with float64() so it is never fused.
+// is materialised with float64() so none is fused into an FMA (the one
+// unwrapped t2/2 is a division by 2, exact either way).
 func Step(st *State, p *Params, in Input, env Env) {
 	in = in.Clean()
 	mu := clean(env.Mu, 0, 2)
@@ -22,9 +23,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 	step := float64(p.SteerRate * DT)
 	st.Delta += min(max(target-st.Delta, -step), step)
 
-	// Slip angles (small-angle form).
+	// Slip angles (small-angle form). The front one is the steered wheel's
+	// lateral velocity −(cos δ·w − sin δ·VX) over the speed, w = VY + a·R, with
+	// sin δ ≈ δ, cos δ ≈ 1 − δ²/2: for |VX| ≥ slipVX it is δ − w/VX to first
+	// order, and its sign always matches the force's power, so tyres only
+	// dissipate (below slipVX too, where the denominator is floored).
 	den := max(abs(st.VX), slipVX)
-	af := clamp(st.Delta-(st.VY+float64(cgFront*st.R))/den, slipCap)
+	cd := 1 - float64(st.Delta*st.Delta)/2
+	w := st.VY + float64(cgFront*st.R)
+	af := clamp((float64(st.Delta*st.VX)-float64(cd*w))/den, slipCap)
 	ar := clamp(-(st.VY-float64(cgRear*st.R))/den, slipCap)
 
 	// Assists.
@@ -56,8 +63,9 @@ func Step(st *State, p *Params, in Input, env Env) {
 	rpm = max(sv*p.RPMPerMS[st.Gear-1], idleRPM)
 	st.RPM = rpm
 	drive := 0.0
-	if st.VX >= 0 && thr > 0 {
-		// Pedal map: torque × throttle², so part throttle is gentle.
+	if thr > 0 {
+		// Pedal map: torque × throttle², so part throttle is gentle. The engine
+		// pushes forward at any VX sign (a car rolling backwards recovers).
 		drive = float64(float64(float64(thr*thr)*torque(rpm)) * p.Drive[st.Gear-1])
 	}
 
@@ -72,9 +80,10 @@ func Step(st *State, p *Params, in Input, env Env) {
 	capF, capR = float64(capF*kF), float64(capR*kR)
 	fyF, fyR = float64(fyF*kF), float64(fyR*kR)
 	capX := capR // rear longitudinal capacity
-	if in.Throttle > diffOn {
-		// Diff lock: more traction under power, less rear lateral capacity.
-		kd := max(1-float64(p.DiffK*in.Throttle), 0)
+	if eff := float64(in.Throttle * in.Throttle); eff > diffOn {
+		// Diff lock acts on the mapped throttle (torque share): more traction
+		// under power, less rear lateral capacity.
+		kd := max(1-float64(p.DiffK*eff), 0)
 		capX = float64(capR * (1 + p.DiffX))
 		capR, fyR = float64(capR*kd), float64(fyR*kd)
 	}
@@ -85,14 +94,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 
 	// Brakes and rolling resistance oppose the full velocity (a spun car
 	// brakes sideways too); brake and drive force are capped at the axle's
-	// reduced μ·Fz (rear: longitudinal capacity, incl. the diff gain). The friction circle then scales Fy to
-	// what Fx leaves.
+	// reduced μ·Fz (drive: rear longitudinal capacity incl. the diff gain, which
+	// may exceed the lateral circle; that is power oversteer). The friction
+	// circle then scales Fy to what Fx leaves.
 	ux, uy := 0.0, 0.0
 	if spd > 0 {
 		ux, uy = st.VX/spd, st.VY/spd
 	}
 	bF := min(float64(brk*p.BrakeF), capF)
-	bR := min(float64(brk*p.BrakeR), capX)
+	bR := min(float64(brk*p.BrakeR), capR) // no diff gain on braking
 	fxF := -float64(ux * bF)
 	fxR := clamp(drive-float64(ux*bR), capX)
 	fyF = circle(fxF, fyF-float64(uy*bF), capF)
@@ -100,11 +110,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 
 	// Body accelerations (force part only).
 	drag := float64(p.DragK*spd) + float64(envDragM*clean(env.Drag, 0, 10))
-	fx := fxF + fxR - float64(drag*st.VX) - float64(ux*rollRes)
-	fy := fyF + fyR - float64(drag*st.VY) - float64(uy*rollRes)
+	// The front lateral force acts along the steered wheel: its body-frame
+	// components are −fyF·sinδ (longitudinal) and fyF·cosδ, small-angle
+	// sin δ ≈ δ, cos δ ≈ 1 − δ²/2 (without the first, steering adds energy).
+	fyFl := float64(fyF * cd)
+	fx := fxF + fxR - float64(fyF*st.Delta) - float64(drag*st.VX) - float64(ux*rollRes)
+	fy := fyFl + fyR - float64(drag*st.VY) - float64(uy*rollRes)
 	ax := fx / mass
 	ay := fy / mass
-	rdot := (float64(cgFront*fyF) - float64(cgRear*fyR)) / yawI
+	rdot := (float64(cgFront*fyFl) - float64(cgRear*fyR)) / yawI
 
 	// Integrate the force part. It never reverses VX (no reverse gear; brakes
 	// stop, they do not push back).

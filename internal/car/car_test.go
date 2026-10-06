@@ -231,6 +231,9 @@ func TestSimSpinThenBrakeStops(t *testing.T) {
 		for range 90 {
 			Step(&st, &p, Input{Steer: 1, Throttle: 1}, asphalt)
 		}
+		if spun := math.Abs(st.VY) > math.Abs(st.VX); h == Sim && !spun {
+			t.Fatalf("sim did not spin: VX %.1f VY %.1f", st.VX, st.VY)
+		}
 		if tm := stopTime(h, st, 10); tm > 10 {
 			t.Fatalf("%v: after a full-lock slide (VX %.1f VY %.1f R %.2f) the car did not stop within 10 s", h, st.VX, st.VY, st.R)
 		}
@@ -328,6 +331,70 @@ func TestGearTable(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Coasting with the wheel on full lock must only lose energy (translation and
+// yaw), and the car must roll to a stop.
+func TestSteeringAddsNoEnergy(t *testing.T) {
+	energy := func(st State) float64 {
+		return 0.5*mass*(st.VX*st.VX+st.VY*st.VY) + 0.5*yawI*st.R*st.R
+	}
+	for _, h := range []Handling{Sim, Arcade} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		st := rest()
+		st.VX = 20
+		st.Gear = 4
+		stopped := false
+		for i := range 60 * 60 {
+			e0 := energy(st)
+			Step(&st, &p, Input{Steer: 1}, asphalt)
+			if e1 := energy(st); e1 > e0*(1+1e-9) {
+				t.Fatalf("%v tick %d: energy %.9g → %.9g (VX %.3f VY %.3f R %.3f)", h, i, e0, e1, st.VX, st.VY, st.R)
+			}
+			if st.Speed() < 2 {
+				stopped = true
+				break
+			}
+		}
+		if !stopped {
+			t.Fatalf("%v: still %.2f m/s after 60 s", h, st.Speed())
+		}
+	}
+}
+
+// The rear brake is capped by the plain rear grip: the diff's traction gain
+// applies to drive only. Braking hard with the diff active (pedal 0.6), Diff 10
+// must not stop shorter than Diff 1.
+func TestBrakeGetsNoDiffGain(t *testing.T) {
+	dist := func(diff int) float64 {
+		p := NewParams(Sim, with(DefaultSetup(), Diff, diff), Damage{})
+		st := rest()
+		st.VX, st.Gear = 20, 3
+		for range 60 * 10 {
+			Step(&st, &p, Input{Throttle: 0.6, Brake: 1}, asphalt)
+			if st.VX < 1 {
+				break
+			}
+		}
+		return st.X
+	}
+	if d1, d10 := dist(1), dist(10); d10 < d1 {
+		t.Fatalf("braking 20→1 m/s under pedal 0.6: diff 1 %.3f m, diff 10 %.3f m", d1, d10)
+	}
+}
+
+// The engine pushes forward at any VX sign: a car rolling backwards recovers.
+func TestBackwardsRecovers(t *testing.T) {
+	p := NewParams(Sim, DefaultSetup(), Damage{})
+	st := rest()
+	st.VX = -10
+	for range 60 * 5 {
+		Step(&st, &p, Input{Throttle: 1}, asphalt)
+		if st.VX >= 0 {
+			return
+		}
+	}
+	t.Fatalf("still VX %.2f after 5 s", st.VX)
 }
 
 type rng uint64

@@ -1,7 +1,8 @@
 // Package car is Pitlane's vehicle model: a dynamic bicycle model stepped at a
 // fixed 60 Hz. Step uses only + − × ÷ sqrt and comparisons, and materialises
-// every product that feeds a sum (float64(a*b)) so Go cannot fuse it into an
-// FMA; the TS port in client/src/car replays Go-written vectors.
+// every product (float64(a*b)) so Go cannot fuse it into an FMA; NewParams does
+// the same and takes derived constants as literals. The TS port in
+// client/src/car replays Go-written vectors.
 package car
 
 import "math"
@@ -132,7 +133,7 @@ const (
 	latLoss    = 0.12 // grip loss per unit of lateral transfer / axle load
 	suspLoss   = 0.15 // grip loss at Dmg.Susp = 1
 	minLoad    = 0.1  // axle load floor, × static load
-	lowSpeed   = 1.0  // below this |VX| lateral force blends to 0
+	lowSpeed   = 1.0  // below this total speed lateral force blends to 0
 	slipCap    = 0.6  // slip angle clamp (rad)
 	slipVX     = 3.0  // slip denominator floor (m/s)
 	yawDamp    = 0.9  // low-speed yaw damping per step
@@ -141,8 +142,8 @@ const (
 	tcCut      = 0.5  // Arcade TC throttle factor
 	absCut     = 0.6  // Arcade ABS brake factor
 	tcSlip     = 0.9  // TC engages above this fraction of αpk (rear)
-	diffOn     = 0.3  // diff lock acts above this throttle
-	diffStep   = 0.01 // rear lateral capacity loss per diff step × throttle (0.04 spun the default Sim car under part throttle mid-corner)
+	diffOn     = 0.3  // diff lock acts above this mapped throttle (pedal²)
+	diffStep   = 0.04 // rear lateral capacity loss per diff step × mapped throttle
 	diffGrip   = 0.03 // rear longitudinal capacity gain per diff step under throttle
 	latFront0  = 0.3  // front share of lateral transfer at SuspBalance 1
 	latFrontK  = 0.05 // … per SuspBalance step
@@ -194,7 +195,7 @@ type Params struct {
 	BrakeR       float64
 	Drive        [8]float64 // wheel force per Nm of engine torque, per gear
 	RPMPerMS     [8]float64 // engine rpm per m/s, per gear
-	DiffK        float64    // 0.04·(Diff−1): rear lateral loss per unit throttle
+	DiffK        float64    // 0.04·(Diff−1): rear lateral loss per unit mapped throttle
 	DiffX        float64    // 0.03·(Diff−1): rear longitudinal gain under throttle
 	LatF         float64    // front share of lateral transfer
 	LatK         float64    // hcg/track width
