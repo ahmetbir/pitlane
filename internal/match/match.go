@@ -128,6 +128,9 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 		out.Snap(m.snap())
 	}
 	m.syncGrid(out, ev.PhaseChanged && m.r.Phase() == race.Grid)
+	if ev.PhaseChanged && m.r.Phase() == race.Lights {
+		m.lights = protocol.LightsMsg{} // the previous race's lights are not this race's
+	}
 	if ev.Lights > 0 {
 		m.lights = protocol.LightsMsg{T: protocol.TLights, On: ev.Lights}
 		out.All(m.lights)

@@ -375,6 +375,31 @@ func TestLateJoinerGetsLightsAndResults(t *testing.T) {
 	}
 }
 
+func TestRematchLateJoinerGetsNoStaleLights(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	run(m, out, 600*60, func() bool { return m.r.Phase() == race.Results })
+	if m.lights.Out == 0 {
+		t.Fatalf("race 1 never reached lights out: %+v", m.lights)
+	}
+	run(m, out, 600*60, func() bool { return m.r.Phase() == race.Grid })
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	m.Step(nil, out) // race 2 enters the lights
+	if m.r.Phase() != race.Lights {
+		t.Fatalf("phase %v", m.r.Phase())
+	}
+	id, err := m.Join(room.Who{Name: "Bee"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.take()
+	m.Welcome(id, "ABCD", "", out)
+	if ls := of[protocol.LightsMsg](out.take()); len(ls) != 0 {
+		t.Fatalf("stale lights %+v", ls)
+	}
+}
+
 func TestInfoLapAndChanged(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Ace")
