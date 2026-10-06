@@ -9,10 +9,12 @@ import (
 )
 
 // contactRace is a race in phase Racing with every car parked far apart on the track,
-// except cars 1 (A) and 2 (B), which the caller places.
+// except cars 1 (A) and 2 (B), which the caller places. Every car is driven by a human who
+// presses nothing (Step(nil)), so cars only coast: no bot steers or brakes them.
 func contactRace(mode Contact) *Race {
 	r := New(Settings{Handling: car.Arcade, Contact: mode, Laps: 3, Seed: 1}, track.Kiyi())
 	for i, c := range r.cars {
+		c.Driver.Human = true
 		x, z := r.tr.Point(r.tr.Length*float64(i)/numCars+50, 0)
 		c.St.X, c.St.Z = x, z
 		c.Seg, _, _ = r.tr.Locate(x, z, -1)

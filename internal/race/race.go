@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/ahmetbir/pitlane/internal/bot"
 	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/track"
 )
@@ -49,6 +50,7 @@ type Car struct {
 	jumped  bool
 	rankLap int // net forward line crossings, counted or not; ranking only
 	slot    track.Pose
+	brain   bot.Brain
 }
 
 type LapEvent struct {
@@ -119,6 +121,8 @@ func (r *Race) Cars() []*Car { return r.cars[:] }
 func (r *Race) makeBot(c *Car) {
 	c.Driver = Driver{Name: fmt.Sprintf("Bot %d", c.ID), Setup: car.DefaultSetup()}
 	c.P = car.NewParams(r.set.Handling, c.Driver.Setup, car.Damage{})
+	seed := rng{s: r.set.Seed ^ uint64(c.ID)}
+	c.brain = bot.NewBrain(seed.next())
 }
 
 func (r *Race) place(c *Car, p track.Pose) {
@@ -238,8 +242,46 @@ func (r *Race) car(id CarID) *Car {
 	return r.cars[id-1]
 }
 
-// botInput is the bot driver seam (Task 9); until then bots coast.
-func botInput(c *Car) car.Input { return car.Input{} }
+const (
+	aheadRange = 12.0 // m along the track
+	aheadLat   = 4.0  // m either side
+)
+
+// spot is where a car is on the track at the start of a tick.
+type spot struct{ s, lat float64 }
+
+// spots locates every car once, before any of them moves this tick.
+func (r *Race) spots() (sp [numCars]spot) {
+	for i, c := range r.cars {
+		_, sp[i].lat, sp[i].s = r.tr.Locate(c.St.X, c.St.Z, c.Seg)
+	}
+	return sp
+}
+
+// ahead is the nearest car within aheadRange ahead of car i along the track and aheadLat beside it.
+func (r *Race) ahead(i int, sp *[numCars]spot) *car.State {
+	var best *car.State
+	bd := aheadRange
+	for j, o := range r.cars {
+		if j == i {
+			continue
+		}
+		d := math.Mod(sp[j].s-sp[i].s+r.tr.Length, r.tr.Length)
+		if d > 0 && d <= bd && math.Abs(sp[j].lat-sp[i].lat) <= aheadLat {
+			best, bd = &o.St, d
+		}
+	}
+	return best
+}
+
+// botInput drives a bot car: still on the grid and under the lights, its brain once racing.
+func (r *Race) botInput(i int, sp *[numCars]spot) car.Input {
+	if r.phase == Lights {
+		return car.Input{}
+	}
+	c := r.cars[i]
+	return c.brain.Drive(&c.St, &c.P, r.tr, c.Seg, r.ahead(i, sp), r.set.Handling)
+}
 
 // Step advances one tick. Cars are visited in ID order; inputs are looked up, never iterated.
 func (r *Race) Step(inputs map[CarID]car.Input) Events {
@@ -250,12 +292,19 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 	r.startEvent = false
 
 	if r.running() {
+		// Every input is decided before any car moves.
 		var walls [numCars]wallHit
+		sp := r.spots()
+		var ins [numCars]car.Input
 		for i, c := range r.cars {
-			in := botInput(c)
 			if c.Driver.Human {
-				in = inputs[c.ID].Clean()
+				ins[i] = inputs[c.ID].Clean()
+			} else {
+				ins[i] = r.botInput(i, &sp)
 			}
+		}
+		for i, c := range r.cars {
+			in := ins[i]
 			walls[i].j, walls[i].n = moveCar(&c.St, &c.P, in, r.tr, &c.Seg)
 		}
 		if r.phase != Lights {
