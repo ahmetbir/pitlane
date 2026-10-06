@@ -1,7 +1,8 @@
 // One race session: the socket, the 3D view, the race loop and the in-session
 // screens (grid with the garage overlay, HUD, results, error), switched by
 // flow.ts from the server's messages. leave() tears everything down.
-import { speed } from "../car/car.ts";
+import { RaceAudio } from "../audio/engine.ts";
+import { speed, type Input } from "../car/car.ts";
 import { RaceView } from "../game/view.ts";
 import { startLoop } from "../game/loop.ts";
 import { RaceState } from "../game/racestate.ts";
@@ -33,6 +34,8 @@ export function play(o: PlayOpts): void {
   const settings = loadSettings();
   const controls = browserControls();
   const hud = new Hud(track.segs);
+  const audio = new RaceAudio(settings.volume);
+  let throttle = 0;
   const grid = new GridScreen({
     ready: () => session.ready(loadSetup()),
     start: () => session.start(),
@@ -133,6 +136,9 @@ export function play(o: PlayOpts): void {
       case "wing":
         if (m.car === car) hud.toast(t("hud.wing"));
         break;
+      case "dmg":
+        if (m.car === car) audio.contact();
+        break;
       case "notice":
         if (flow.view === "grid") grid.notice(noticeText(m.code, m.msg));
         else hud.toast(noticeText(m.code, m.msg));
@@ -144,7 +150,10 @@ export function play(o: PlayOpts): void {
 
   const loopParts = () => ({
     controls,
-    input: session.input.bind(session),
+    input: (i: Input) => {
+      throttle = i.throttle;
+      session.input(i);
+    },
     driving: () => race?.currentPhase() === "lights" || race?.currentPhase() === "racing" || race?.currentPhase() === "finish",
     frame: (dt: number, cam: boolean, back: boolean) => {
       if (!view) return;
@@ -154,7 +163,9 @@ export function play(o: PlayOpts): void {
       const st = session.ownCar();
       const others = session.otherCars();
       view.draw(dt, st ? { id: car, st, wingLost: race?.ownLatest()?.wingLost ?? false } : null, others);
+      audio.setActive(flow.view === "race");
       if (flow.view !== "race") return;
+      if (st) audio.frame(dt, st, throttle, others);
       if (st) hud.gauges(speed(st), st.gear, st.rpm);
       hud.drawMap(st ? [...others, { id: car, x: st.x, z: st.z }] : others, car);
     },
@@ -170,6 +181,7 @@ export function play(o: PlayOpts): void {
     session.close();
     controls.dispose();
     hud.dispose();
+    audio.dispose();
     view?.dispose();
     view = null;
     banner.hide();
