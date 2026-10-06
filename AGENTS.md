@@ -35,4 +35,7 @@ bash scripts/smoke.sh          # once cmd/pitlane exists
   together. Notice and refusal codes never collide with roomkit's (tested). Snapshots start
   `{"t":"snap","tick":`.
 - **Storage keys** start with `pitlane.`; never rename one.
+- **Deploy.** README [Deployment](README.md#deployment); `scripts/deploy.sh` (blue/green, `pitlane-blue/green`,
+  `$pitlane_upstream`) reads the gitignored `deploy/deploy.env`; CI deploys `main` via
+  `deploy/ci-deploy.sh` after approval. Use `deploy/deploy.env.example` placeholders in docs.
 - **Secrets** never enter git (`deploy/deploy.env`, `.env*`, keys).

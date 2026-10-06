@@ -1,0 +1,111 @@
+# Tests every push and pull request. A push to main also builds the release
+# and deploys it, but only after the repository owner approves the
+# `production` environment (required reviewer; main only). The deploy key in
+# that environment can run nothing on the server but deploy/ci-deploy.sh.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04-arm # arm64: goldens are per GOARCH; arm64 is production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.8" # = go.mod toolchain; release.sh refuses any other
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: hide the system MIME database
+        # Go's mime package reads these on Linux; the production image
+        # (distroless) has none, so tests must not depend on it.
+        run: |
+          for f in /etc/mime.types /etc/apache2/mime.types /etc/apache/mime.types \
+                   /etc/httpd/conf/mime.types /usr/local/share/mime/globs2 /usr/share/mime/globs2; do
+            if [ -e "$f" ]; then sudo mv "$f" "$f.hidden"; fi
+          done
+      - name: go
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+      - name: client
+        working-directory: client
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+          npm test
+          npm run build
+      - name: smoke
+        run: bash scripts/smoke.sh
+
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.8"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: build
+        run: bash scripts/release.sh
+      - name: bundle
+        run: |
+          tar -cf bundle.tar dist/pitlane-linux-arm64 dist/VERSION Dockerfile.runtime \
+            deploy/compose.yml deploy/switch-upstream.sh scripts/deploy.sh
+          echo "version $(cat dist/VERSION)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bundle
+          path: bundle.tar
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50 # may wait up to 35 min for a still-draining idle color (ci-deploy.sh)
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bundle
+      - name: deploy
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          d="$RUNNER_TEMP/ssh"
+          mkdir -p "$d"
+          printf '%s\n' "$KEY" > "$d/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$d/known_hosts"
+          ssh -i "$d/key" -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$d/known_hosts" \
+            "root@$HOST" < bundle.tar
+          rm -f "$d/key"

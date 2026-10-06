@@ -1,0 +1,68 @@
+# Shipped by scripts/deploy.sh as $DEPLOY_DIR/compose-<version>.yml on the
+# server and run as compose project pitlane-<color> (blue/green);
+# VERSION, COLOR, EDGE_NETWORK, TRUST_PROXY and PUBLIC_HOST come from
+# $DEPLOY_DIR/env-<color> (deploy/deploy.env). No published port: nginx reaches the
+# container as http://pitlane-<color>:8080 on the shared edge network (the
+# deploy rewrites `set $pitlane_upstream` to switch colors), and only that
+# network's subnet is trusted for X-Real-IP. Pilot stats live in the
+# external volume pitlane-data, shared by both colors; the server's flock
+# on /data/stats.lock keeps one writer at a time (the draining color hands
+# it over on SIGUSR1). External: no compose command ever removes it.
+# bluegreen: 1  (scripts/deploy.sh refuses to run a version whose compose file lacks this line in a color)
+services:
+  # Not "pitlane": compose adds the service name as a DNS alias on the edge
+  # network; nginx must resolve only the color names pitlane-blue/green.
+  pitlane-bg:
+    image: pitlane:${VERSION:?set VERSION}
+    container_name: pitlane-${COLOR:?set COLOR to blue or green}
+    restart: unless-stopped # the deploy sets the draining color to `no`: it exits by itself
+    command:
+      - -addr=:8080
+      - -origin=${PUBLIC_HOST:?set PUBLIC_HOST to the public host name}
+      - -public-origin=wss://${PUBLIC_HOST} # CSP connect-src: old WebKit does not match wss: against 'self'
+      - -trust-proxy=${TRUST_PROXY:?set TRUST_PROXY to the edge network subnet}
+      - -log=json
+      - -data=/data
+      - -metrics-addr=127.0.0.1:9090 # loopback only: read via docker exec ... -get; not on the edge network
+      - -drain-max=${DRAIN_MAX:-30m} # after SIGUSR1: exit when the last player left, or after this
+      # Capacity: 8 rooms x 10 cars, with headroom for spectators. Not yet load-tested;
+      # re-measure on your own hardware before raising it.
+      - -max-conns=96
+      - -max-rooms=8
+    environment:
+      GOMEMLIMIT: 200MiB # Go ignores the cgroup limit; collect before mem_limit
+    networks:
+      edge:
+        aliases: ["pitlane-${COLOR}"]
+    volumes:
+      - pitlane-data:/data # pilot stats; the root FS stays read-only
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "/pitlane", "-healthcheck", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 2s # probe fast while starting (Docker >= 25)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    name: ${EDGE_NETWORK:?set EDGE_NETWORK to the edge docker network shared with nginx}
+    external: true
+
+volumes:
+  pitlane-data:
+    name: pitlane-data
+    external: true # created once (docker volume create pitlane-data); shared by both colors
