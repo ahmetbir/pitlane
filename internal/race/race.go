@@ -282,6 +282,8 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			r.raceStart = r.tick
 			for _, c := range r.cars {
 				c.LapStart, c.Lap = r.tick, 0
+				c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
+				c.Sector, c.LapValid, c.OffTicks = 0, true, 0
 			}
 			r.setPhase(Racing)
 			ev.PhaseChanged = true

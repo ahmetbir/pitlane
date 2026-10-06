@@ -218,12 +218,54 @@ func TestResultsResetsGrid(t *testing.T) {
 
 func TestMidRaceSeatKeepsSetup(t *testing.T) {
 	r := newRace(1)
+	a, _ := r.Seat("a", "")
+	custom := car.Setup{1, 2, 50, 2, 3, 4}
+	r.Ready(a, custom)
+	custom = r.Cars()[0].Driver.Setup
 	for r.Phase() != Racing {
 		r.Step(nil)
 	}
-	id, _ := r.Seat("late", "")
-	if c := r.Cars()[id-1]; c.Driver.Setup != car.DefaultSetup() || c.P != car.NewParams(r.set.Handling, c.Driver.Setup, c.St.Dmg) {
-		t.Fatal("setup and params disagree")
+	r.Unseat(a)
+	id, ok := r.Seat("b", "")
+	if !ok || id != 10 {
+		// last-placed bot is car 10 unless a is it; either way look up by returned id
+		t.Logf("seated %d", id)
+	}
+	// force the new human into the unseated car: seat until we get it
+	for id != a {
+		if id, ok = r.Seat("n", ""); !ok {
+			t.Fatal("never got the car back")
+		}
+	}
+	c := r.Cars()[a-1]
+	if c.Driver.Setup != custom || c.P != car.NewParams(r.set.Handling, custom, c.St.Dmg) {
+		t.Fatalf("setup %v", c.Driver.Setup)
+	}
+}
+
+func TestLightsOutRebaselines(t *testing.T) {
+	r := newRace(3)
+	a, _ := r.Seat("a", "")
+	r.Start(a)
+	c := r.Cars()[0]
+	for r.Phase() == Lights || r.Phase() == Grid {
+		in := map[CarID]car.Input{}
+		if c.St.Speed() < 5 && r.Tick() < 120 {
+			in[a] = car.Input{Throttle: 1}
+		} else {
+			in[a] = car.Input{Brake: 1}
+		}
+		r.Step(in)
+	}
+	if c.PenaltyMs != 5000 {
+		t.Fatalf("penalty %d", c.PenaltyMs)
+	}
+	_, _, s := r.tr.Locate(c.St.X, c.St.Z, -1)
+	if c.S != s || c.Sector != 0 || !c.LapValid || c.OffTicks != 0 {
+		t.Fatalf("not re-baselined: S %v want %v sector %d", c.S, s, c.Sector)
+	}
+	if i, _, _ := r.tr.Locate(c.St.X, c.St.Z, -1); c.Seg != i {
+		t.Fatal("seg stale")
 	}
 }
 
