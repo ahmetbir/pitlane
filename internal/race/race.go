@@ -240,8 +240,6 @@ func (r *Race) car(id CarID) *Car {
 // botInput is the bot driver seam (Task 9); until then bots coast.
 func botInput(c *Car) car.Input { return car.Input{} }
 
-func (r *Race) timing() {} // Task 8: laps, sectors, positions, finish
-
 // Step advances one tick. Cars are visited in ID order; inputs are looked up, never iterated.
 func (r *Race) Step(inputs map[CarID]car.Input) Events {
 	ev := Events{Lights: -1}
@@ -260,7 +258,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 		}
 		if r.phase != Lights {
 			ev.WingLost = r.resolveContacts()
-			r.timing()
+			r.timing(&ev)
 		}
 	}
 
@@ -348,13 +346,25 @@ func (r *Race) byPos() []*Car {
 
 func (r *Race) results() []ResultRow {
 	rows := make([]ResultRow, 0, numCars)
-	for i, c := range r.byPos() {
+	for _, c := range r.byPos() {
 		total := 0
 		if c.Finished {
 			total = (c.FinishTick-r.raceStart)*1000/tps + c.PenaltyMs
 		}
-		rows = append(rows, ResultRow{Pos: i + 1, Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
+		rows = append(rows, ResultRow{Car: c.ID, Name: c.Driver.Name, Human: c.Driver.Human,
 			Laps: c.Lap, TotalMs: total, BestMs: c.Best, PenaltyMs: c.PenaltyMs, Pilot: c.Driver.Pilot})
+	}
+	// Penalties re-order the finishers; the unfinished keep their road order behind them.
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if (a.TotalMs > 0) != (b.TotalMs > 0) {
+			return a.TotalMs > 0
+		}
+		return a.TotalMs > 0 && a.TotalMs < b.TotalMs
+	})
+	for i := range rows {
+		rows[i].Pos = i + 1
+		r.car(rows[i].Car).Pos = i + 1
 	}
 	return rows
 }
