@@ -1,0 +1,4 @@
+github.com/ahmetbir/roomkit v0.2.0 h1:DaMwmt+Gbu+w7WmIJJYBmrC8h18B0vFlsCsvVQJ7rfI=
+github.com/ahmetbir/roomkit v0.2.0/go.mod h1:DWrrr5k471VhaedTyBFnKw4OjfIkM2aVAX+5jg13k6c=
+github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
+github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
