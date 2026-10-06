@@ -10,13 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ahmetbir/pitlane/internal/front"
+	"github.com/ahmetbir/pitlane/internal/stats"
 	"github.com/ahmetbir/roomkit/server"
 )
 
 type config struct {
 	addr, origin, trustProxy, publicOrigin, logFormat, healthcheck string
-	metricsAddr                                                    string // metrics listener; "" = off
-	get                                                            string // -get URL: print the body and exit
+	dataDir                                                        string        // pilot stats directory; "" = stats off
+	statsWait                                                      time.Duration // how long a starting server waits for the stats lock
+	metricsAddr                                                    string        // metrics listener; "" = off
+	get                                                            string        // -get URL: print the body and exit
 
 	showVersion bool
 	lag         time.Duration
@@ -42,6 +46,8 @@ func parseFlags(args []string) (config, error) {
 	fl.StringVar(&c.metricsAddr, "metrics-addr", "", "metrics listener address, e.g. 127.0.0.1:9090; never publish it (empty = off)")
 	fl.StringVar(&c.get, "get", "", "GET this URL, print the body (at most 1 MiB), exit 0 on 200 else 1")
 	fl.DurationVar(&c.drainMax, "drain-max", defaultDrain, "after SIGUSR1 (drain), exit when no game socket is left or after this")
+	fl.StringVar(&c.dataDir, "data", "", "directory for pilot stats (empty = stats off)")
+	fl.DurationVar(&c.statsWait, "stats-wait", defaultStatsWt, "wait this long for another server to release the -data lock (blue/green handoff)")
 	fl.IntVar(&c.maxRooms, "max-rooms", 16, "rooms running at once (0 = no limit)")
 	fl.IntVar(&c.limits.MaxConns, "max-conns", d.MaxConns, "open game sockets, server-wide (0 = default)")
 	fl.IntVar(&c.limits.MaxConnsIP, "max-conns-ip", d.MaxConnsIP, "open game sockets per client address (0 = default)")
@@ -61,8 +67,8 @@ func parseFlags(args []string) (config, error) {
 	if c.logFormat != "text" && c.logFormat != "json" {
 		return c, fmt.Errorf("-log must be text or json, got %q", c.logFormat)
 	}
-	if c.drainMax <= 0 {
-		return c, fmt.Errorf("-drain-max must be > 0")
+	if c.drainMax <= 0 || c.statsWait <= 0 {
+		return c, fmt.Errorf("-drain-max and -stats-wait must be > 0")
 	}
 	if c.maxRooms < 0 {
 		return c, fmt.Errorf("-max-rooms must be >= 0, got %d", c.maxRooms)
@@ -74,10 +80,10 @@ func parseFlags(args []string) (config, error) {
 	return c, nil
 }
 
-func (c config) server(web fs.FS) server.Options {
+func (c config) server(web fs.FS, st *stats.Slot) server.Options {
 	return server.Options{
 		Web: web, Lag: c.lag, Origins: splitList(c.origin),
-		TrustProxy: c.proxies, ConnectSrc: splitList(c.publicOrigin), Limits: c.limits,
+		TrustProxy: c.proxies, ConnectSrc: splitList(c.publicOrigin), Limits: c.limits, Stats: front.NewStats(st),
 	}
 }
 
@@ -90,7 +96,3 @@ func splitList(s string) []string {
 	}
 	return out
 }
-
-// defaultDrain: a draining server exits after this at the latest. Task 13 moves
-// it next to the stats handoff.
-const defaultDrain = 30 * time.Minute

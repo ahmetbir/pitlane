@@ -9,6 +9,7 @@ import (
 	"github.com/ahmetbir/pitlane/internal/car"
 	"github.com/ahmetbir/pitlane/internal/protocol"
 	"github.com/ahmetbir/pitlane/internal/race"
+	"github.com/ahmetbir/pitlane/internal/stats"
 	"github.com/ahmetbir/pitlane/internal/track"
 	"github.com/ahmetbir/roomkit/netproto"
 	"github.com/ahmetbir/roomkit/room"
@@ -23,9 +24,8 @@ const (
 	trackName = "kiyi"
 )
 
-// StatsSink takes a pilot's tally; it must not block. Task 13 replaces the
-// payload type with stats.Delta.
-type StatsSink interface{ Record(any) bool }
+// StatsSink takes a pilot's tally; it must not block.
+type StatsSink interface{ Record(stats.Delta) bool }
 
 // Match is not safe for concurrent use; the room goroutine owns it.
 type Match struct {
@@ -151,6 +151,7 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	if ev.Results != nil {
 		m.results = protocol.NewResults(ev.Results)
 		out.All(m.results)
+		m.record(ev.Results)
 	}
 	// Join and leave are republished by the room itself; only the game's own changes here.
 	if gi := m.gameInfo(); gi != m.info {
@@ -221,6 +222,30 @@ func (m *Match) Info() room.Info[Info] {
 
 func (m *Match) Label() string { return m.set.Handling.String() + "/" + m.set.Contact.String() }
 
-// FlushStats and Close have nothing to hand over yet (Task 13 adds stats).
+// record counts a finished race for every human with a pilot; bots and
+// pilotless humans never, and a human who left mid-race is a bot again by now.
+func (m *Match) record(rows []race.ResultRow) {
+	if m.stats == nil {
+		return
+	}
+	for _, r := range rows {
+		if !r.Human || r.Pilot == "" {
+			continue
+		}
+		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Races: 1, Laps: r.Laps}
+		if r.Pos == 1 {
+			d.Wins = 1
+		}
+		if r.Pos <= 3 {
+			d.Podiums = 1
+		}
+		if r.BestMs > 0 {
+			d.BestMs = map[string]int{trackName: r.BestMs}
+		}
+		m.stats.Record(d)
+	}
+}
+
+// FlushStats and Close have nothing to hand over: records are written at Results.
 func (m *Match) FlushStats() {}
 func (m *Match) Close()      {}

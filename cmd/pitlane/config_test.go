@@ -26,7 +26,7 @@ func TestProductionFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := c.server(nil)
+	o := c.server(nil, nil)
 	if len(o.TrustProxy) != 1 || len(o.Origins) != 1 || o.Origins[0] != "pitlane.example.com" || c.logFormat != "json" ||
 		len(o.ConnectSrc) != 1 || o.ConnectSrc[0] != "wss://pitlane.example.com" {
 		t.Fatalf("%+v", o)
@@ -58,5 +58,19 @@ func TestMetricsFlags(t *testing.T) {
 	}
 	if c, _ := parseFlags(nil); c.metricsAddr != "" || c.get != "" {
 		t.Fatal("metrics listener is off by default")
+	}
+}
+
+func TestStatsFlags(t *testing.T) {
+	c, err := parseFlags(nil)
+	if err != nil || c.dataDir != "" || c.statsWait != defaultStatsWt || c.server(nil, nil).Stats != nil {
+		t.Fatalf("%+v %v", c, err)
+	}
+	c, err = parseFlags([]string{"-data", "/x", "-stats-wait", "5s"})
+	if err != nil || c.dataDir != "/x" || c.statsWait.String() != "5s" {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if _, err = parseFlags([]string{"-stats-wait", "0"}); err == nil {
+		t.Fatal("-stats-wait 0 must be refused")
 	}
 }

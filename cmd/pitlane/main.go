@@ -19,6 +19,7 @@ import (
 
 	"github.com/ahmetbir/pitlane/internal/front"
 	"github.com/ahmetbir/pitlane/internal/match"
+	"github.com/ahmetbir/pitlane/internal/stats"
 	"github.com/ahmetbir/pitlane/internal/track"
 	"github.com/ahmetbir/roomkit/drain"
 	"github.com/ahmetbir/roomkit/metrics"
@@ -83,20 +84,31 @@ func run(cfg config) error {
 	if err != nil {
 		return err
 	}
-	track.Kiyi() // the racing line takes ~0.8 s to build: before the first room needs it
-	reg := metrics.New("pitlane", nil)
+	track.Kiyi()             // the racing line takes ~0.8 s to build: before the first room needs it
+	var st *stats.Slot       // nil = stats off (no -data)
+	var sink match.StatsSink // only a non-nil slot: no typed-nil interface
+	var dropped func() uint64
+	if cfg.dataDir != "" {
+		st = stats.NewSlot() // opened by the drain actor: it may wait for the old server's lock
+		sink, dropped = st, st.Dropped
+	}
+	reg := metrics.New("pitlane", dropped)
 	msrv, err := serveMetrics(cfg.metricsAddr, reg)
 	if err != nil {
 		return err
 	}
-	lb := match.NewLobby(ctx, cfg.maxRooms, reg, nil)
-	o := cfg.server(sub)
+	lb := match.NewLobby(ctx, cfg.maxRooms, reg, sink)
+	o := cfg.server(sub, st)
 	o.Metrics = reg
 	h := front.NewServer(lb, o)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGUSR1, syscall.SIGUSR2)
 	defer signal.Stop(sig)
-	d := drain.New(h, nil, quit, drain.Options{Max: cfg.drainMax}) // Task 13: the stats handoff
+	var ho drain.Handoff // only a non-nil slot: no typed-nil interface
+	if st != nil {
+		ho = statsHandoff{slot: st, dir: cfg.dataDir, retry: statsRetry, wait: cfg.statsWait}
+	}
+	d := drain.New(h, ho, quit, drain.Options{Every: drainEvery, Max: cfg.drainMax})
 	drainDone := make(chan struct{})
 	go func() { defer close(drainDone); d.Run(ctx, sig) }()
 	srv := &http.Server{
@@ -125,7 +137,13 @@ func run(cfg config) error {
 		case <-deadline.Done():
 			slog.Error("shutdown", "err", "rooms or sockets still open at the deadline")
 		}
-		<-drainDone
+		// After the rooms: their results are in the store's queue.
+		<-drainDone // no store opens after this Close
+		if st != nil {
+			if err := st.Close(); err != nil {
+				slog.Error("stats close", "err", err)
+			}
+		}
 		if msrv != nil {
 			mctx, mcancel := context.WithTimeout(context.Background(), metricsGrace)
 			defer mcancel()
@@ -137,9 +155,14 @@ func run(cfg config) error {
 	go summaryLoop(ctx, reg, summaryEvery, func(s string) { slog.Info("stats", "summary", s) })
 	slog.Info("pitlane listening", "addr", cfg.addr, "version", version, "origin", cfg.origin,
 		"trust_proxy", cfg.trustProxy, "max_rooms", cfg.maxRooms, "max_conns", cfg.limits.MaxConns,
-		"max_conns_ip", cfg.limits.MaxConnsIP, "metrics_addr", cfg.metricsAddr)
+		"max_conns_ip", cfg.limits.MaxConnsIP, "stats", st != nil, "metrics_addr", cfg.metricsAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		// No room ran; the metrics listener stops (later Closes are no-ops).
+		// No room ran, but a just-opened journal still gets its final
+		// snapshot (a store opening later is closed by the closed slot) and
+		// the metrics listener stops (later Closes are no-ops).
+		if st != nil {
+			_ = st.Close()
+		}
 		if msrv != nil {
 			_ = msrv.Close()
 		}
