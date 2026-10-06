@@ -95,9 +95,12 @@ type State struct {
 
 func (st State) Speed() float64 { return math.Sqrt(st.VX*st.VX + st.VY*st.VY) }
 
+// Mass is the car mass (kg), exported for collision impulses.
+const Mass = 798.0
+
 // Model constants.
 const (
-	mass       = 798.0
+	mass       = Mass
 	wheelbase  = 3.6
 	cgFront    = 1.98 // a: CG → front axle (≈45 % front static)
 	cgRear     = 1.62 // b: CG → rear axle
