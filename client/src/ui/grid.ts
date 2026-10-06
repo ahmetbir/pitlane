@@ -8,6 +8,22 @@ import { teamColour } from "../render/palette.ts";
 
 export type GridActions = { ready(): void; start(): void; garage(): void; leave(): void };
 
+/** How long Ready and Start stay disabled after a click. */
+export const COOLDOWN_MS = 1000;
+
+/**
+ * A click handler that runs fn and disables b for COOLDOWN_MS: mashing Ready or
+ * Start must not flood the socket (the server kicks a flood).
+ */
+export function cooled(b: { disabled: boolean }, fn: () => void, later: (f: () => void, ms: number) => unknown = setTimeout): () => void {
+  return () => {
+    if (b.disabled) return;
+    b.disabled = true;
+    fn();
+    later(() => { b.disabled = false; }, COOLDOWN_MS);
+  };
+}
+
 export class GridScreen {
   readonly el: HTMLElement;
   private readonly list = h("ol", { class: "roster" });
@@ -19,9 +35,9 @@ export class GridScreen {
 
   constructor(a: GridActions) {
     this.readyBtn = h("button", { type: "button", class: "btn primary" }, t("grid.ready"));
-    this.readyBtn.addEventListener("click", () => a.ready());
+    this.readyBtn.addEventListener("click", cooled(this.readyBtn, () => a.ready()));
     this.startBtn = h("button", { type: "button", class: "btn", hidden: true }, t("grid.start"));
-    this.startBtn.addEventListener("click", () => a.start());
+    this.startBtn.addEventListener("click", cooled(this.startBtn, () => a.start()));
     const garage = h("button", { type: "button", class: "btn" }, t("grid.garage"));
     garage.addEventListener("click", () => a.garage());
     const leave = h("button", { type: "button", class: "btn ghost" }, t("grid.leave"));

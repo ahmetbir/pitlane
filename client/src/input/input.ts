@@ -52,7 +52,11 @@ export class Controls {
   private st = 0;
   private padActiveUntil = -Infinity;
   private prev: number[] | null = null;
-  private readonly down = (e: KeyboardEvent) => this.key(e, true);
+  private active: number; // seconds: the last key press or pad movement
+  private readonly down = (e: KeyboardEvent) => {
+    this.active = this.deps.now();
+    this.key(e, true);
+  };
   private readonly up = (e: KeyboardEvent) => this.key(e, false);
   private readonly blur = () => this.release();
   private readonly vis = () => { if (this.deps.doc?.hidden) this.release(); };
@@ -61,6 +65,7 @@ export class Controls {
 
   constructor(deps: ControlsDeps) {
     this.deps = deps;
+    this.active = deps.now();
     deps.target.addEventListener("keydown", this.down);
     deps.target.addEventListener("keyup", this.up);
     deps.target.addEventListener("blur", this.blur);
@@ -73,6 +78,16 @@ export class Controls {
     this.deps.target.removeEventListener("blur", this.blur);
     this.deps.doc?.removeEventListener("visibilitychange", this.vis);
     this.release();
+  }
+
+  /** Seconds since the last key press or pad movement (or since touch). */
+  idleS(): number {
+    return this.deps.now() - this.active;
+  }
+
+  /** Restarts the idle clock (a race begins). */
+  touch(): void {
+    this.active = this.deps.now();
   }
 
   /** True once per C press. */
@@ -148,7 +163,10 @@ export class Controls {
     this.prev = cur;
     const moved = Math.abs(cur[0]) > DEADZONE || cur[1] > TRIGGER_DEADZONE || cur[2] > TRIGGER_DEADZONE
       || cur.some((v, i) => Math.abs(v - prev[i]) > MOVE_EPS);
-    if (moved) this.padActiveUntil = now + GAMEPAD_HOLD_S;
+    if (moved) {
+      this.padActiveUntil = now + GAMEPAD_HOLD_S;
+      this.active = now;
+    }
     if (now > this.padActiveUntil) return null;
     return {
       th: rescale(cur[2], TRIGGER_DEADZONE),

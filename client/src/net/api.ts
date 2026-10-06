@@ -85,20 +85,25 @@ async function board<T>(url: string, row: (v: unknown) => T | null, fetchImpl?: 
 }
 
 export const fetchWins = (p: Period, f?: Fetch) => board(`/api/leaderboard?period=${p}`, winRow, f);
-export const fetchLaps = (p: Period, f?: Fetch) => board(`/api/leaderboard?period=${p}&key=kiyi`, lapRow, f);
+/** The best-lap board of p for one handling: Arcade and Sim laps never share a board. */
+export const fetchLaps = (p: Period, hd: HandlingName, f?: Fetch) => board(`/api/leaderboard?period=${p}&key=${lapKey(hd)}`, lapRow, f);
+
+/** The server's best-lap key: track and handling. */
+export const lapKey = (hd: HandlingName) => `kiyi-${hd}`;
 
 /** The pilot header of /api/me (roomkit pilot.Header). */
 export const PILOT_HEADER = "X-Pilot-Token";
 
-export type PilotCard = { name: string; races: number; wins: number; podiums: number; laps: number; best: number };
+export type PilotCard = { name: string; races: number; wins: number; podiums: number; laps: number; best: Record<HandlingName, number> };
 
-/** An /api/me body: the card, "none" for {"pilot":null}, null when malformed. Best is Kıyı's best lap ms (0 = none). */
+/** An /api/me body: the card, "none" for {"pilot":null}, null when malformed. Best is Kıyı's best lap ms per handling (0 = none). */
 export function parseMe(v: unknown): PilotCard | "none" | null {
   if (!isObj(v) || !("pilot" in v)) return null;
   const p = v.pilot;
   if (p === null) return "none";
   if (!isObj(p) || typeof p.name !== "string" || !count(p.races) || !count(p.wins) || !count(p.podiums) || !count(p.laps)) return null;
-  const best = isObj(p.best) && count(p.best.kiyi) ? p.best.kiyi : 0;
+  const lap = (hd: HandlingName) => (isObj(p.best) && count(p.best[lapKey(hd)]) ? (p.best[lapKey(hd)] as number) : 0);
+  const best = { arcade: lap("arcade"), sim: lap("sim") };
   return { name: p.name, races: p.races, wins: p.wins, podiums: p.podiums, laps: p.laps, best };
 }
 

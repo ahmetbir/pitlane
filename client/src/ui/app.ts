@@ -24,6 +24,10 @@ import { loadSettings, loadSetup, loadToken, storeToken } from "./prefs.ts";
 import { resultsView } from "./results.ts";
 import { focusFirst, Toast } from "./widgets.ts";
 
+/** A race with no key or pad activity for this long is left (an idle tab costs bandwidth). */
+const IDLE_LEAVE_S = 5 * 60;
+const IDLE_CHECK_MS = 5000; // a timer, not the frame loop: a hidden tab draws no frames
+
 export type PlayOpts = {
   /** A fresh canvas for this race's renderer (main swaps the page's #game element). */
   canvas: () => HTMLCanvasElement;
@@ -99,6 +103,7 @@ export function play(o: PlayOpts): void {
     const before = flow.view;
     flow = step(flow, e);
     if (flow.view !== before || e.t === "retry") {
+      if (flow.view === "race" && before !== "race") controls.touch(); // idle counts from the start
       if (flow.view !== "grid") garageOpen = false;
       render(true);
     }
@@ -192,9 +197,14 @@ export function play(o: PlayOpts): void {
     },
   });
 
+  const idleTimer = setInterval(() => {
+    if (flow.view === "race" && controls.idleS() >= IDLE_LEAVE_S) leave(t("race.idle"));
+  }, IDLE_CHECK_MS);
+
   function teardown(): void {
     if (closed) return;
     closed = true;
+    clearInterval(idleTimer);
     stopLoop?.();
     session.close();
     controls.dispose();
@@ -208,10 +218,16 @@ export function play(o: PlayOpts): void {
     banner.hide();
   }
 
-  function leave(): void {
+  /** Back home; note is shown there as a toast. */
+  function leave(note?: string): void {
     teardown();
     history.pushState(null, "", "/");
     o.home();
+    if (note) {
+      const home = new Toast();
+      ui.append(home.el);
+      home.show(note, 6000);
+    }
   }
 
   const session: Session = new Session(socketURL(location), o.name, o.entry, track, {

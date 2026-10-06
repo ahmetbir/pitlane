@@ -184,3 +184,25 @@ test("hidden document releases; dispose removes listeners", () => {
   assert.equal(r.dfns.length, 0);
   assert.ok(Object.values(r.fns).every((a) => a.length === 0));
 });
+
+test("idle: key presses and pad movement restart the clock, touch too", () => {
+  const r = rig();
+  assert.equal(r.c.idleS(), 0);
+  r.advance(120);
+  assert.equal(r.c.idleS(), 120);
+  r.down("KeyQ"); // any key counts
+  assert.equal(r.c.idleS(), 0);
+  r.advance(30);
+  r.c.sample(0.016); // no pad: nothing
+  assert.equal(r.c.idleS(), 30);
+  r.setPad(mkPad(0.5));
+  r.c.sample(0.016);
+  assert.equal(r.c.idleS(), 0);
+  r.setPad(mkPad(0)); // released: a movement too
+  r.c.sample(0.016);
+  r.advance(10);
+  r.c.sample(0.016); // the pad at rest: no activity
+  assert.equal(r.c.idleS(), 10);
+  r.c.touch();
+  assert.equal(r.c.idleS(), 0);
+});
