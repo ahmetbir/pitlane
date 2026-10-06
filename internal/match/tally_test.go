@@ -54,7 +54,7 @@ func TestWinAndPodiumByPosition(t *testing.T) {
 		sk := &sink{}
 		m := newCounted(sk)
 		m.record([]race.ResultRow{{Pos: c.pos, Human: true, Pilot: "h", Name: "A", Laps: 3, BestMs: 80000, Finished: true,
-			Credit: race.Credit{Laps: 3, BestMs: 80000, Full: true}}, {Pos: 9, Pilot: "bot"}})
+			Credit: race.Credit{Laps: 3, BestMs: 80000, Full: true, Flag: true}}, {Pos: 9, Pilot: "bot"}})
 		if len(sk.got) != 1 || sk.got[0].Wins != c.wins || sk.got[0].Podiums != c.podiums || sk.got[0].Laps != 3 ||
 			sk.got[0].BestMs["kiyi-arcade"] != 80000 {
 			t.Fatalf("pos %d: %+v", c.pos, sk.got)
@@ -106,9 +106,9 @@ func TestOneResultPerPilot(t *testing.T) {
 	sk := &sink{}
 	m := newCounted(sk)
 	m.record([]race.ResultRow{
-		{Pos: 2, Car: 1, Human: true, Pilot: "h", Name: "A", Laps: 3, BestMs: 80000, Finished: true, Credit: race.Credit{Laps: 3, BestMs: 80000, Full: true}},
-		{Pos: 5, Car: 2, Human: true, Pilot: "h", Name: "A", Laps: 3, BestMs: 79000, Finished: true, Credit: race.Credit{Laps: 3, BestMs: 79000, Full: true}},
-		{Pos: 6, Car: 3, Human: true, Pilot: "k", Name: "K", Laps: 3, Finished: true, Credit: race.Credit{Laps: 3, Full: true}},
+		{Pos: 2, Car: 1, Human: true, Pilot: "h", Name: "A", Laps: 3, BestMs: 80000, Finished: true, Credit: race.Credit{Laps: 3, BestMs: 80000, Full: true, Flag: true}},
+		{Pos: 5, Car: 2, Human: true, Pilot: "h", Name: "A", Laps: 3, BestMs: 79000, Finished: true, Credit: race.Credit{Laps: 3, BestMs: 79000, Full: true, Flag: true}},
+		{Pos: 6, Car: 3, Human: true, Pilot: "k", Name: "K", Laps: 3, Finished: true, Credit: race.Credit{Laps: 3, Full: true, Flag: true}},
 	})
 	if len(sk.got) != 2 || sk.got[0].Pilot != "h" || sk.got[0].Podiums != 1 || sk.got[0].BestMs["kiyi-arcade"] != 80000 ||
 		sk.got[0].Races != 1 || sk.got[1].Pilot != "k" {

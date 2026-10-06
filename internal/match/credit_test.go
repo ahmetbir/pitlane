@@ -73,8 +73,8 @@ func TestMidRaceJoinerCreditedFromTakeover(t *testing.T) {
 	}
 }
 
-// A finish is recorded at the flag: the pilot may leave during the Finish
-// window, and Results does not record them again.
+// A finisher who leaves during the Finish window is recorded at leaving, with
+// the place they hold; Results does not record them again.
 func TestFinishThenLeaveRecordedOnce(t *testing.T) {
 	sk := &sink{}
 	m, out := newCounted(sk), &fakeOut{}
@@ -87,10 +87,13 @@ func TestFinishThenLeaveRecordedOnce(t *testing.T) {
 	if !c.Finished || c.Pos != 1 || m.r.Phase() != race.Finish {
 		t.Fatalf("finished %v P%d phase %v", c.Finished, c.Pos, m.r.Phase())
 	}
-	if len(sk.got) != 1 {
-		t.Fatalf("not recorded at the flag: %+v", sk.got)
+	if len(sk.got) != 0 {
+		t.Fatalf("recorded before Results or leaving: %+v", sk.got)
 	}
 	m.Leave(a)
+	if len(sk.got) != 1 {
+		t.Fatalf("not recorded at leaving: %+v", sk.got)
+	}
 	toResults(m, out)
 	if m.r.Phase() != race.Results || len(sk.got) != 1 {
 		t.Fatalf("phase %v recorded %+v", m.r.Phase(), sk.got)
@@ -101,7 +104,7 @@ func TestFinishThenLeaveRecordedOnce(t *testing.T) {
 }
 
 // A pilot who reconnects mid-race gets their car, place and lap back, and the
-// race counts as if they had never left.
+// race counts; the lap in progress while they were away does not.
 func TestReconnectKeepsCarAndRace(t *testing.T) {
 	sk := &sink{}
 	m, out := newCounted(sk), &fakeOut{}
@@ -124,7 +127,54 @@ func TestReconnectKeepsCarAndRace(t *testing.T) {
 	for i := 0; i < 600*60 && m.r.Phase() != race.Results; i++ {
 		drive(m, out, b)
 	}
-	if len(sk.got) != 1 || sk.got[0].Races != 1 || sk.got[0].Laps != 3 {
+	if len(sk.got) != 1 || sk.got[0].Races != 1 || sk.got[0].Laps != 2 { // laps 1 and 3
 		t.Fatalf("%+v", sk.got)
+	}
+}
+
+// Finishers are recorded at Results, the final classification: a later
+// finisher whose total with penalties is smaller takes the win, and only one
+// pilot gets it.
+func TestFinishersRecordedAtResults(t *testing.T) {
+	sk := &sink{}
+	m, out := newCounted(sk), &fakeOut{}
+	a := joinPilot(t, m, out, "Ace", "hashA")
+	b := joinPilot(t, m, out, "Bee", "hashB")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	first := (*race.Car)(nil)
+	for i := 0; i < 600*60 && first == nil; i++ {
+		drive(m, out, a, b)
+		for _, id := range []room.PlayerID{a, b} {
+			if carOf(m, id).Finished {
+				first = carOf(m, id)
+			}
+		}
+	}
+	if first == nil || first.Pos != 1 {
+		t.Fatalf("no human leads at the flag: %+v", first)
+	}
+	first.PenaltyMs += 60000 // the later finisher's total is now smaller
+	other := carOf(m, a)
+	if other == first {
+		other = carOf(m, b)
+	}
+	for i := 0; i < 600*60 && m.r.Phase() != race.Results; i++ {
+		if !other.Finished && len(sk.got) != 0 {
+			t.Fatalf("recorded before Results: %+v", sk.got)
+		}
+		drive(m, out, a, b)
+	}
+	if !other.Finished || len(sk.got) != 2 {
+		t.Fatalf("other finished %v, recorded %+v", other.Finished, sk.got)
+	}
+	wins := 0
+	for _, d := range sk.got {
+		wins += d.Wins
+		if d.Races != 1 || (d.Wins == 1) != (d.Pilot == other.Driver.Pilot) {
+			t.Fatalf("%+v", sk.got)
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("%d wins: %+v", wins, sk.got)
 	}
 }

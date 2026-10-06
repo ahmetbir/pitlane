@@ -38,9 +38,10 @@ bash scripts/smoke.sh          # after the client build: 4 bot players, gaps and
 - **Deploy.** README [Deployment](README.md#deployment); `scripts/deploy.sh` (blue/green, `pitlane-blue/green`,
   `$pitlane_upstream`) reads the gitignored `deploy/deploy.env`; CI deploys `main` via
   `deploy/ci-deploy.sh` after approval. Use `deploy/deploy.env.example` placeholders in docs.
-- **Stats credit.** A pilot is credited from the takeover on (`race.Credit`): laps since, best
-  of the laps started since, a race only with a finish after one full lap of their own. A finish
-  is recorded at the flag, once per pilot and race. Best laps are keyed `kiyi-<handling>`.
+- **Stats credit.** A pilot is credited from the takeover on (`race.Credit`), never while away
+  (a reconnect resumes with the next lap): laps driven, best of the laps driven from the line, a
+  race only with their own flag after one full lap of their own. Recorded at Results, or when a
+  finisher leaves before it; once per pilot and race. Best laps are keyed `kiyi-<handling>`.
 - **Known limitations** (accepted): stats of races ending on a draining color are dropped, and a
   reconnect to a draining color's room gets "room gone" (README Deployment).
 - **Secrets** never enter git (`deploy/deploy.env`, `.env*`, keys).

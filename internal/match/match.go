@@ -92,6 +92,10 @@ func (m *Match) Welcome(id room.PlayerID, code, newToken string, out room.Outbox
 func (m *Match) Autopilot(id room.PlayerID) car.Input { return m.r.Autopilot(race.CarID(id)) }
 
 func (m *Match) Leave(id room.PlayerID) {
+	// A finisher who leaves before Results is recorded now, at the place they hold.
+	if row, ok := m.r.Standing(race.CarID(id)); ok && row.Finished && m.r.Phase() == race.Finish {
+		m.record([]race.ResultRow{row})
+	}
 	m.r.Unseat(race.CarID(id))
 	m.humans--
 }
@@ -153,7 +157,6 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	for _, l := range ev.Laps {
 		out.All(protocol.NewLap(l))
 	}
-	m.record(ev.Finished) // a finish is final: the pilot may leave before Results
 	for _, id := range ev.WingLost {
 		out.All(protocol.NewWing(id))
 	}
@@ -249,11 +252,12 @@ func (m *Match) Label() string { return m.set.Handling.String() + "/" + m.set.Co
 func BestKey(h car.Handling) string { return trackName + "-" + h.String() }
 
 // record counts the race of every human with a pilot in rows, once per pilot
-// and race: at the flag for a finisher, at Results for the rest. Bots and
+// and race: at Results (the final classification), or when a finisher leaves
+// before it. Bots and
 // pilotless humans never count, and a human who left mid-race is a bot again
 // by now. Only what the pilot earned since taking the car over counts (see
 // race.Credit): laps, the best valid lap, and a race, win or podium for a
-// finish after one full lap of their own. A DNF keeps its laps and best lap.
+// finish (their own flag) after one full lap of their own. A DNF keeps its laps and best lap.
 // A pilot in two seats (two tabs) counts once, by the better position.
 func (m *Match) record(rows []race.ResultRow) {
 	if m.stats == nil {
@@ -272,7 +276,7 @@ func (m *Match) record(rows []race.ResultRow) {
 		m.recorded[r.Pilot] = true
 		c := r.Credit
 		d := stats.Delta{Pilot: r.Pilot, Name: r.Name, Laps: c.Laps}
-		if r.Finished && c.Full {
+		if r.Finished && c.Full && c.Flag {
 			d.Races = 1
 			if r.Pos == 1 {
 				d.Wins = 1

@@ -48,13 +48,10 @@ func (r *Race) timing(ev *Events) {
 	}
 	if r.finishing {
 		for _, c := range done {
-			c.Finished, c.FinishTick = true, r.tick
+			c.Finished, c.FinishTick, c.ownFlag = true, r.tick, c.Driver.Human
 		}
 	}
 	r.rank()
-	if r.finishing && len(done) > 0 {
-		ev.Finished = r.flagged(done)
-	}
 }
 
 // advanceSector moves the sector marker over the boundaries between prev and c.S, in order only.
@@ -73,10 +70,17 @@ func (r *Race) advanceSector(c *Car, prev float64) {
 func (r *Race) completeLap(c *Car, ev *Events) {
 	ms := (r.tick - c.LapStart) * 1000 / tps
 	valid := c.LapValid
-	if c.LapStart >= c.credTick { // a lap the seated driver drove from the line
-		c.ownFull = true
-		if valid && (c.ownBest == 0 || ms < c.ownBest) {
-			c.ownBest = ms
+	switch {
+	case !c.Driver.Human: // a bot, or a pilot away: nobody's credit
+	case c.skipLap: // in progress at the reconnect
+		c.skipLap = false
+	default:
+		c.credLaps++
+		if c.LapStart >= c.credTick { // driven from the line
+			c.ownFull = true
+			if valid && (c.ownBest == 0 || ms < c.ownBest) {
+				c.ownBest = ms
+			}
 		}
 	}
 	c.Lap++

@@ -90,24 +90,78 @@ func TestFinishJoinerEarnsNothing(t *testing.T) {
 	t.Fatal("no results")
 }
 
-// A car takes the flag: its row comes at once, at its place then.
-func TestFinishedRowAtTheFlag(t *testing.T) {
+// Standing is a car's row at its place in the results order now.
+func TestStandingAtPlaceNow(t *testing.T) {
 	r := newRace(5)
-	for r.Tick() < 900*60 {
-		ev := r.Step(nil)
-		if len(ev.Finished) > 0 {
-			f := ev.Finished[0]
-			if f.Pos != 1 || !f.Finished || f.Laps != 3 {
-				t.Fatalf("first flag %+v", ev.Finished)
-			}
-			return
+	for r.Phase() != Finish && r.Tick() < 900*60 {
+		r.Step(nil)
+	}
+	var lead *Car
+	for _, c := range r.cars {
+		if c.Finished {
+			lead = c
 		}
 	}
-	t.Fatal("nobody finished")
+	if lead == nil {
+		t.Fatal("nobody finished")
+	}
+	if w, ok := r.Standing(lead.ID); !ok || w.Pos != 1 || !w.Finished || w.Laps != 3 || w.Car != lead.ID {
+		t.Fatalf("%+v", w)
+	}
+	if _, ok := r.Standing(0); ok {
+		t.Fatal("car 0")
+	}
+}
+
+// Nothing counts while a pilot is away: not the lap the bot completes for them,
+// not the lap in progress when they return (started while away); credit
+// resumes with the next lap.
+func TestNoCreditWhileAway(t *testing.T) {
+	r := New(Settings{Handling: car.Arcade, Contact: Ghost, Laps: 5, Seed: 1}, newRace(1).tr)
+	a, _ := r.Seat("a", "pa")
+	r.Start(a)
+	c := r.cars[a-1]
+	own := map[int]LapEvent{}
+	step := func(in map[CarID]car.Input) {
+		for _, l := range r.Step(in).Laps {
+			if l.Car == a {
+				own[l.Lap] = l
+			}
+		}
+	}
+	for (c.Lap < 1 || r.Tick()-c.LapStart < 40*60) && r.Tick() < 600*60 {
+		step(autopilot(r))
+	}
+	laps, best := c.credLaps, c.ownBest
+	if laps != 1 || best == 0 || best != own[1].Ms {
+		t.Fatalf("before leaving: %d laps best %d (lap 1 %+v)", laps, best, own[1])
+	}
+	r.Unseat(a)
+	left := r.Tick()
+	for c.Lap < 2 && r.Tick() < 600*60 {
+		step(nil) // the bot completes lap 2
+	}
+	if r.Tick()-left > reconnectTicks {
+		t.Fatalf("lap 2 took %d ticks away", r.Tick()-left)
+	}
+	if got, _ := r.Seat("a", "pa"); got != a {
+		t.Fatalf("reconnect got %d", got)
+	}
+	for c.Lap < 4 && r.Tick() < 900*60 {
+		step(autopilot(r))
+	}
+	want := best
+	if l := own[4]; l.Valid && l.Ms < want {
+		want = l.Ms
+	}
+	if c.credLaps != 2 || c.ownBest != want {
+		t.Fatalf("credited %d laps (want 1 + lap 4), best %d want %d; laps %+v", c.credLaps, c.ownBest, want, own)
+	}
 }
 
 // A pilot who drops mid-race and comes back within a minute gets the same car,
-// place and lap back, credit kept; another joiner meanwhile does not take it.
+// place and lap back, credit resuming from the return; another joiner meanwhile
+// does not take it.
 func TestReconnectGetsOwnCar(t *testing.T) {
 	r := newRace(1)
 	a, _ := r.Seat("a", "pa")
@@ -119,7 +173,6 @@ func TestReconnectGetsOwnCar(t *testing.T) {
 	if c.Pos != 1 {
 		t.Fatalf("car %d is P%d, not leading", a, c.Pos)
 	}
-	cred := c.credTick
 	r.Unseat(a)
 	for range 2 * 60 {
 		r.Step(nil)
@@ -129,7 +182,7 @@ func TestReconnectGetsOwnCar(t *testing.T) {
 		t.Fatal("a joiner took the car kept for its pilot")
 	}
 	got, ok := r.Seat("a2", "pa")
-	if !ok || got != a || c.Pos != 1 || c.Lap != lap || !c.Driver.Human || c.Driver.Name != "a2" || c.credTick != cred {
+	if !ok || got != a || c.Pos != 1 || c.Lap != lap || !c.Driver.Human || c.Driver.Name != "a2" || c.credTick != r.Tick() || !c.skipLap {
 		t.Fatalf("got car %d P%d lap %d (was %d) human %v", got, c.Pos, c.Lap, lap, c.Driver.Human)
 	}
 }

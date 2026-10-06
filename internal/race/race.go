@@ -3,7 +3,6 @@ package race
 import (
 	"fmt"
 	"math"
-	"slices"
 	"sort"
 
 	"github.com/ahmetbir/pitlane/internal/bot"
@@ -55,11 +54,14 @@ type Car struct {
 	slow    int // consecutive racing ticks below resetSpeed (marshal reset)
 	hold    int // ticks a due reset has waited for traffic
 
-	// Credit: what the seated driver has earned since taking the car over.
-	credTick int  // tick of the takeover; laps started at or after it are the driver's own
-	credLap  int  // laps completed at the takeover
-	ownBest  int  // ms: best valid lap started at or after credTick, 0 = none
-	ownFull  bool // completed a lap started at or after credTick
+	// Credit: what the seated driver has earned since taking the car over. Nothing
+	// counts while the car is a bot (a pilot away, see lastPilot).
+	credTick int  // tick of the takeover or reconnect; laps started at or after it are the driver's own
+	credLaps int  // laps the driver completed
+	skipLap  bool // the lap in progress at a reconnect: not the driver's
+	ownBest  int  // ms: best valid lap the driver drove from the line, 0 = none
+	ownFull  bool // completed a lap they drove from the line
+	ownFlag  bool // took the flag seated
 
 	// Reconnect: the pilot who left this car during a session, and when.
 	lastPilot string
@@ -67,17 +69,20 @@ type Car struct {
 	lastSetup car.Setup
 }
 
-// Credit is what the pilot in a car has earned since taking it over: laps
-// completed since then, the best valid lap among the laps started since then,
-// and whether one full lap was driven (a finish counts as a race only then).
+// Credit is what the pilot in a car has earned since taking it over, never
+// while away: laps completed seated (after a reconnect, not the lap that was
+// in progress), the best valid lap among the laps driven from the line, whether
+// one such full lap was driven, and whether they took the flag themselves. A
+// finish counts as a race only with Full and Flag.
 type Credit struct {
 	Laps   int
 	BestMs int
 	Full   bool
+	Flag   bool
 }
 
 func (c *Car) credit() Credit {
-	return Credit{Laps: c.Lap - c.credLap, BestMs: c.ownBest, Full: c.ownFull}
+	return Credit{Laps: c.credLaps, BestMs: c.ownBest, Full: c.ownFull, Flag: c.ownFlag}
 }
 
 type LapEvent struct {
@@ -107,7 +112,6 @@ type Events struct {
 	LightsOut    bool
 	Laps         []LapEvent
 	Results      []ResultRow
-	Finished     []ResultRow // cars that took the flag this tick, at their position then
 	PhaseChanged bool
 	WingLost     []CarID // cars whose front wing came off this tick (full contact)
 	Reset        []CarID // cars the marshals put back on the racing line this tick
@@ -168,7 +172,8 @@ func (r *Race) place(c *Car, p track.Pose) {
 	c.Lap, c.Sector, c.LapStart = 0, 0, r.tick
 	c.Best, c.Last, c.OffTicks = 0, 0, 0
 	c.LapValid, c.Finished, c.FinishTick, c.jumped, c.rankLap, c.slow = true, false, 0, false, 0, 0
-	c.credLap, c.ownBest, c.ownFull, c.lastPilot = 0, 0, false, ""
+	c.clearCredit()
+	c.lastPilot = ""
 }
 
 func (r *Race) humans() (n int, allReady bool) {
@@ -190,6 +195,7 @@ func (r *Race) Seat(name, pilot string) (CarID, bool) {
 		c.Driver = Driver{Human: true, Name: name, Pilot: pilot, Setup: c.lastSetup}
 		c.P = car.NewParams(r.set.Handling, c.lastSetup, c.St.Dmg)
 		c.lastPilot = ""
+		c.credTick, c.skipLap = r.tick, r.underway() // credit resumes from now
 		if r.creator == 0 {
 			r.creator = c.ID
 		}
@@ -214,7 +220,8 @@ func (r *Race) Seat(name, pilot string) (CarID, bool) {
 	if pick == nil {
 		return 0, false
 	}
-	pick.credTick, pick.credLap, pick.ownBest, pick.ownFull, pick.lastPilot = r.tick, pick.Lap, 0, false, ""
+	pick.clearCredit()
+	pick.credTick, pick.lastPilot = r.tick, ""
 	if n, _ := r.humans(); n == 0 && r.phase == Grid {
 		r.gridStart = r.tick
 	}
@@ -554,7 +561,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 				c.LapStart, c.Lap = r.tick, 0
 				c.Seg, _, c.S = r.tr.Locate(c.St.X, c.St.Z, -1)
 				c.Sector, c.LapValid, c.OffTicks, c.rankLap, c.slow = 0, true, 0, 0, 0
-				c.credLap, c.ownBest, c.ownFull = 0, 0, false
+				c.clearCredit()
 			}
 			r.setPhase(Racing)
 			ev.PhaseChanged = true
@@ -650,15 +657,18 @@ func (r *Race) results() []ResultRow {
 	return rows
 }
 
-// flagged is a row for every car in done, at its place in the results order now.
-func (r *Race) flagged(done []*Car) []ResultRow {
-	var rows []ResultRow
+// Standing is car id's row at its place in the results order now (false for an unknown id).
+func (r *Race) Standing(id CarID) (ResultRow, bool) {
 	for i, c := range r.order() {
-		if slices.Contains(done, c) {
-			rows = append(rows, r.row(c, i+1))
+		if c.ID == id {
+			return r.row(c, i+1), true
 		}
 	}
-	return rows
+	return ResultRow{}, false
+}
+
+func (c *Car) clearCredit() {
+	c.credLaps, c.skipLap, c.ownBest, c.ownFull, c.ownFlag = 0, false, 0, false, false
 }
 
 func (r *Race) row(c *Car, pos int) ResultRow {
