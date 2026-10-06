@@ -1,6 +1,7 @@
 // DEBUG-only render check (?debug=track): the circuit with ten cars on the
 // racing line, a light sequence, both cameras. Keys: C camera, hold R look
-// back, 1–9/0 follow a car. Not part of the production bundle.
+// back, 1–9/0 follow a car. Not part of the production bundle. Returns the
+// teardown: listeners off, loop cancelled, GPU resources released.
 import { DT, Handling, newParams, speed, type Params, type State } from "../car/car.ts";
 import { moveCar, type Hint } from "../race/world.ts";
 import { Cams } from "../render/cams.ts";
@@ -16,7 +17,7 @@ const GO_AT = 6; // s: lights out
 
 type Runner = { st: State; p: Params; hint: Hint; drv: AutoDriver; mesh: CarMesh; rolled: number };
 
-export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null): void {
+export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null): () => void {
   const stage = new Stage(canvas);
   const track = kiyi();
   const circuit = buildTrack(track);
@@ -32,7 +33,7 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
 
   const cams = new Cams(stage.camera);
   let follow = 0, clock = 0, acc = 0;
-  window.addEventListener("keydown", (e) => {
+  const down = (e: KeyboardEvent) => {
     if (e.repeat) return;
     if (e.code === "KeyC") cams.toggle();
     else if (e.code === "KeyR") cams.lookBack(true);
@@ -40,12 +41,14 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
       follow = (Number(e.code.slice(5)) + 9) % 10;
       cams.snap();
     }
-  });
-  window.addEventListener("keyup", (e) => {
+  };
+  const up = (e: KeyboardEvent) => {
     if (e.code === "KeyR") cams.lookBack(false);
-  });
+  };
+  window.addEventListener("keydown", down);
+  window.addEventListener("keyup", up);
 
-  stage.animate((dt) => {
+  const stop = stage.animate((dt) => {
     clock += dt;
     circuit.setLights(Math.floor(clock), clock >= GO_AT);
     if (clock >= GO_AT) {
@@ -63,7 +66,7 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
     stage.focus(toWorld(f.x, f.z));
   });
 
-  let last = performance.now(), frames = 0, shown = last;
+  let last = performance.now(), frames = 0, shown = last, raf = 0;
   const frame = (now: number) => {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
@@ -76,7 +79,20 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
       frames = 0;
       shown = now;
     }
-    requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame);
   };
-  requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame);
+
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    cancelAnimationFrame(raf);
+    window.removeEventListener("keydown", down);
+    window.removeEventListener("keyup", up);
+    stop();
+    for (const r of runners) r.mesh.dispose();
+    circuit.dispose();
+    stage.dispose();
+  };
 }

@@ -70,7 +70,51 @@ test("cockpit: at the driver's eye, glancing into the corner", () => {
   const dir = new THREE.Vector3();
   cam.getWorldDirection(dir);
   assert.ok(dir.z < -0.1, "steering left looks left (world −Z)");
-  cams.update(Infinity, at(NaN, NaN, NaN, NaN, NaN));
   cams.toggle();
   assert.equal(cams.mode(), "chase");
+});
+
+test("cockpit look-back: eye behind and above the rear wing, looking back", () => {
+  const cam = new THREE.PerspectiveCamera();
+  const cams = new Cams(cam);
+  cams.toggle();
+  cams.lookBack(true);
+  cams.update(1 / 60, at(0, 0, 0, 50, 0.1));
+  assert.ok(cam.position.x < -2.4 && cam.position.y > 1.2, `eye ${cam.position.toArray()}`);
+  const dir = new THREE.Vector3();
+  cam.getWorldDirection(dir);
+  assert.ok(dir.x < -0.9);
+});
+
+test("a non-finite target keeps the last finite camera", () => {
+  for (const toggle of [false, true]) {
+    const cam = new THREE.PerspectiveCamera();
+    const cams = new Cams(cam);
+    if (toggle) cams.toggle();
+    cams.update(1 / 60, at(NaN, 0, 0)); // nothing finite yet: the camera stays put
+    assert.ok(finite(cam));
+    cams.update(1 / 60, at(10, 20, 0.3, 40, 0.05));
+    const p = cam.position.clone(), q = cam.quaternion.clone();
+    for (const bad of [at(NaN, 20, 0.3), at(10, Infinity, 0.3), at(10, 20, NaN), at(10, 20, 0.3, NaN, NaN)]) {
+      cams.update(Infinity, bad);
+      assert.ok(finite(cam), JSON.stringify(bad));
+      assert.ok(cam.position.distanceTo(p) < 1e-6 && Math.abs(cam.quaternion.angleTo(q)) < 1e-6);
+    }
+  }
+});
+
+test("a reset or teleport snaps instead of swinging", () => {
+  const cam = new THREE.PerspectiveCamera();
+  const cams = new Cams(cam);
+  cams.update(1 / 60, at(0, 0, 0));
+  // Heading flips by more than 1 rad in one update: settled at once.
+  cams.update(1 / 60, at(0, 0, 2.5));
+  const want = toWorld(0, 0).add(forward(2.5).multiplyScalar(-6)).setY(2);
+  assert.ok(cam.position.distanceTo(want) < 1e-9);
+  // Moved 50 m: settled at once.
+  cams.update(1 / 60, at(50, 0, 2.5));
+  assert.ok(cam.position.distanceTo(toWorld(50, 0).add(forward(2.5).multiplyScalar(-6)).setY(2)) < 1e-9);
+  // An ordinary step still eases.
+  cams.update(1 / 60, at(50, 0, 2.9));
+  assert.ok(cam.position.distanceTo(toWorld(50, 0).add(forward(2.9).multiplyScalar(-6)).setY(2)) > 0.1);
 });

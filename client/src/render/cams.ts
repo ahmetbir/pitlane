@@ -22,6 +22,10 @@ const LOOK_Y = 0.7;    // m: height of the look point
 const BOOM_W = 7;      // 1/s: chase spring stiffness (ω of the critically damped spring)
 const EYE_X = 0.35;    // m: eye ahead of the centre of gravity, just behind the helmet's centre
 const EYE_Y = 1.0;     // m: above the halo hoop, so the helmet stays out of view and the halo frames it
+const REAR_X = -2.6;   // m: the look-back eye, behind the rear wing …
+const REAR_Y = 1.3;    // m: … and above it, so the view is the road, not the engine cover
+const SNAP_H = 1;      // rad: a heading jump larger than this in one update is a reset
+const SNAP_M = 10;     // m: so is a position jump larger than this
 const GLANCE = 1.6;    // cockpit yaw per rad of front-wheel angle
 const GLANCE_W = 5;    // 1/s
 const COCKPIT_FOV = 78;
@@ -53,6 +57,7 @@ export class Cams {
   private readonly pos = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
+  private last: { x: number; z: number; h: number } | null = null; // last finite target
 
   constructor(cam: THREE.PerspectiveCamera) {
     this.cam = cam;
@@ -79,14 +84,26 @@ export class Cams {
     this.fresh = true;
   }
 
-  /** Moves the camera for dt seconds toward its place for t. */
+  /**
+   * Moves the camera for dt seconds toward its place for t. A non-finite
+   * position or heading keeps the last finite one (nothing moves before the
+   * first); a jump (reset, teleport) snaps instead of swinging.
+   */
   update(dt: number, t: CamTarget): void {
     const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 0;
-    const h = Number.isFinite(t.h) ? t.h : 0;
-    toWorld(t.x, t.z, 0, this.pos);
+    let { x, z, h } = t;
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(h)) {
+      if (!this.last) return;
+      ({ x, z, h } = this.last);
+    }
+    if (this.last && (Math.abs(angleDiff(h, this.last.h)) > SNAP_H || Math.hypot(x - this.last.x, z - this.last.z) > SNAP_M)) {
+      this.fresh = true;
+    }
+    this.last = { x, z, h };
+    toWorld(x, z, 0, this.pos);
     forward(h, this.fwd);
-    if (this.current === "chase") this.chase(step, t.speed);
-    else this.cockpit(step, h, t.delta);
+    if (this.current === "chase") this.chase(step, Number.isFinite(t.speed) ? t.speed : 0);
+    else this.cockpit(step, h, Number.isFinite(t.delta) ? t.delta : 0);
     this.fresh = false;
   }
 
@@ -112,14 +129,16 @@ export class Cams {
   }
 
   private cockpit(dt: number, h: number, delta: number): void {
-    const want = GLANCE * (Number.isFinite(delta) ? delta : 0);
+    const want = GLANCE * delta;
     if (this.fresh) [this.glance, this.glanceV] = [want, 0];
     else [this.glance, this.glanceV] = springStep(this.glance, this.glanceV, want, GLANCE_W, dt);
-    this.cam.position.copy(this.fwd).multiplyScalar(EYE_X).add(this.pos);
-    this.cam.position.y = EYE_Y;
-    const yaw = h + this.glance + (this.back ? Math.PI : 0);
+    // Looking back the eye moves behind and above the rear wing; forward it sits at the driver's.
+    this.cam.position.copy(this.fwd).multiplyScalar(this.back ? REAR_X : EYE_X).add(this.pos);
+    const y = this.back ? REAR_Y : EYE_Y;
+    this.cam.position.y = y;
+    const yaw = this.back ? h + Math.PI : h + this.glance;
     forward(yaw, this.look).multiplyScalar(20).add(this.cam.position);
-    this.look.y = EYE_Y - 0.9;
+    this.look.y = y - 0.9;
     this.cam.up.set(0, 1, 0);
     this.cam.lookAt(this.look);
     this.setFov(COCKPIT_FOV);
@@ -130,4 +149,10 @@ export class Cams {
     this.cam.fov = f;
     this.cam.updateProjectionMatrix();
   }
+}
+
+/** a − b wrapped to (−π, π]. */
+function angleDiff(a: number, b: number): number {
+  const d = Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  return d === -Math.PI ? Math.PI : d;
 }

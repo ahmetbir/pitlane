@@ -131,7 +131,7 @@ function bodyGeometry(team: string): THREE.BufferGeometry {
   m.convex(new THREE.IcosahedronGeometry(0.155, 1), [0.42, 0.72, 0], CAR.helmet);
   // Halo: a centre pillar and a hoop over the driver.
   const hoop: V3[] = [[0.9, 0.86, 0], [0.66, 0.87, 0.24], [0.2, 0.84, 0.33], [0.06, 0.64, 0.36]];
-  m.beam([1.02, 0.6, 0], hoop[0], 0.05, CAR.carbon);
+  m.beam([1.02, 0.6, 0], hoop[0], 0.03, CAR.carbon); // thin: it sits in the middle of the cockpit view
   for (const sg of [1, -1]) {
     for (let k = 0; k + 1 < hoop.length; k++) {
       m.beam([hoop[k][0], hoop[k][1], sg * hoop[k][2]], [hoop[k + 1][0], hoop[k + 1][1], sg * hoop[k + 1][2]], 0.045, CAR.carbon);

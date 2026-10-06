@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { kiyi } from "../track/track.ts";
-import { asphaltGeometry, buildTrack, tyreZones } from "./trackmesh.ts";
+import { tyreZones } from "./scenery.ts";
+import { asphaltGeometry, buildTrack } from "./trackmesh.ts";
 
 const tr = kiyi();
 const built = buildTrack(tr);
@@ -48,12 +49,29 @@ test("asphalt faces up", () => {
   }
 });
 
-test("every mesh is finite and the circuit costs few draw calls", () => {
+test("every mesh is finite; structures and trees come in chunks", () => {
   const ms = meshes();
-  assert.ok(ms.length <= 6, `${ms.length} meshes`);
   for (const m of ms) assert.ok(finite(m.geometry), m.name);
-  const names = ms.map((m) => m.name).sort();
-  assert.deepEqual(names, ["asphalt", "grass", "paint", "startLights", "structures"]);
+  const count = (name: string) => ms.filter((m) => m.name === name).length;
+  for (const name of ["asphalt", "grass", "paint", "startLights"]) assert.equal(count(name), 1, name);
+  assert.ok(count("structures") >= 8 && count("structures") <= 12, `${count("structures")} structure chunks`);
+  assert.ok(count("trees") >= 8 && count("trees") <= 12, `${count("trees")} tree chunks`);
+  assert.equal(ms.length, 4 + count("structures") + count("trees"));
+  for (const m of ms) if (m.name === "trees") assert.equal(m.castShadow, false);
+  // Chunks are local: each one's bounds are far smaller than the circuit's.
+  const whole = new THREE.Box3();
+  for (const m of ms) if (m.name === "structures") whole.union(m.geometry.boundingBox!);
+  for (const m of ms) {
+    if (m.name !== "structures") continue;
+    const s = m.geometry.boundingSphere!.radius;
+    assert.ok(s < whole.getSize(new THREE.Vector3()).length() / 2, "chunk smaller than the circuit");
+  }
+});
+
+test("dispose is idempotent", () => {
+  const t = buildTrack(tr);
+  t.dispose();
+  t.dispose();
 });
 
 test("tyre barriers sit on the outside of corners", () => {
@@ -98,7 +116,7 @@ test("the build is deterministic", () => {
   const s = (t: typeof a) => {
     let pos = 0;
     t.root.traverse((o) => {
-      if (o instanceof THREE.Mesh && o.name === "structures") {
+      if (o instanceof THREE.Mesh && (o.name === "structures" || o.name === "trees")) {
         const p = o.geometry.getAttribute("position").array;
         for (let i = 0; i < p.length; i += 97) pos += p[i];
       }
