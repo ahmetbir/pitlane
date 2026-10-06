@@ -100,6 +100,9 @@ func (st State) Speed() float64 { return math.Sqrt(float64(st.VX*st.VX) + float6
 // Mass is the car mass (kg), exported for collision impulses.
 const Mass = 798.0
 
+// Iz is the yaw inertia (kg·m²), exported for collision impulses.
+const Iz = yawI
+
 // Model constants.
 const (
 	mass       = Mass
@@ -139,7 +142,7 @@ const (
 	absCut     = 0.6  // Arcade ABS brake factor
 	tcSlip     = 0.9  // TC engages above this fraction of αpk (rear)
 	diffOn     = 0.3  // diff lock acts above this throttle
-	diffStep   = 0.04 // rear lateral capacity loss per diff step × throttle
+	diffStep   = 0.01 // rear lateral capacity loss per diff step × throttle (0.04 spun the default Sim car under part throttle mid-corner)
 	diffGrip   = 0.03 // rear longitudinal capacity gain per diff step under throttle
 	latFront0  = 0.3  // front share of lateral transfer at SuspBalance 1
 	latFrontK  = 0.05 // … per SuspBalance step

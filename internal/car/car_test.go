@@ -43,7 +43,7 @@ func cornerThr(h Handling, s Setup, d Damage, steer, v, thr float64) (ay, radius
 	ylo, yhi := lo, hi
 	for i := range ticks {
 		e := v - st.Speed()
-		in := Input{Steer: steer, Throttle: e * 0.5, Brake: -e * 0.5}
+		in := Input{Steer: steer, Throttle: e * 2, Brake: -e * 0.5}
 		if thr >= 0 {
 			in.Throttle = thr
 		}
@@ -163,6 +163,32 @@ func TestSimHoldsSteadyCorner(t *testing.T) {
 	}
 }
 
+// The default Sim car takes part throttle mid-corner without spinning: from
+// 40 m/s at Steer 0.15 and a fixed pedal (no brake) for 10 s, the yaw rate
+// settles and the side slip stays small (the car speeds up on the arc, so VY
+// drifts slowly with speed).
+func TestDefaultSimCarTakesThrottleMidCorner(t *testing.T) {
+	const pedal = 0.5
+	p := NewParams(Sim, DefaultSetup(), Damage{})
+	st := rest()
+	st.VX = 40
+	for st.Gear < 8 && st.VX*p.RPMPerMS[st.Gear-1] > shiftUp {
+		st.Gear++
+	}
+	lo, hi := math.Inf(1), math.Inf(-1)
+	slip := 0.0
+	for i := range 600 {
+		Step(&st, &p, Input{Steer: 0.15, Throttle: pedal}, asphalt)
+		slip = max(slip, math.Abs(st.VY)/max(st.VX, 1))
+		if i >= 480 {
+			lo, hi = min(lo, st.R), max(hi, st.R)
+		}
+	}
+	if !(st.VX > 0 && st.R > 0 && hi-lo < 0.01 && slip < 0.1) {
+		t.Fatalf("pedal %.2f: VX %.1f VY %.2f R %.3f (spread %.4f) max |VY|/VX %.3f", pedal, st.VX, st.VY, st.R, hi-lo, slip)
+	}
+}
+
 func TestArcadeGripsMoreThanSim(t *testing.T) {
 	for _, v := range []float64{25, 40, 60} {
 		if arcade, sim := grip(Arcade, Damage{}, v), grip(Sim, Damage{}, v); !(sim > 0 && arcade >= sim) {
@@ -249,12 +275,10 @@ func TestDiffTradesTractionForCornering(t *testing.T) {
 	if lo, hi := accel(1), accel(10); hi > lo {
 		t.Fatalf("20→40 m/s: diff 1 %.3f s, diff 10 %.3f s", lo, hi)
 	}
-	// At 70 m/s throttle 0.6 is close to what holds the speed, so the brake
-	// barely works against it.
 	held := func(diff int) float64 {
 		best := 0.0
 		for i := 1; i <= 20; i++ {
-			if ay, _, ok := cornerThr(Sim, with(DefaultSetup(), Diff, diff), Damage{}, float64(i)*0.05, 70, 0.6); ok {
+			if ay, _, ok := cornerThr(Sim, with(DefaultSetup(), Diff, diff), Damage{}, float64(i)*0.05, 40, 0.6); ok {
 				best = max(best, ay)
 			}
 		}

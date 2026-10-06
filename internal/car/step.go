@@ -57,7 +57,8 @@ func Step(st *State, p *Params, in Input, env Env) {
 	st.RPM = rpm
 	drive := 0.0
 	if st.VX >= 0 && thr > 0 {
-		drive = float64(float64(thr*torque(rpm)) * p.Drive[st.Gear-1])
+		// Pedal map: torque × throttle², so part throttle is gentle.
+		drive = float64(float64(float64(thr*thr)*torque(rpm)) * p.Drive[st.Gear-1])
 	}
 
 	// Lateral slip forces, then lateral transfer as grip loss on each axle.
