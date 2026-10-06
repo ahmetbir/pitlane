@@ -35,8 +35,9 @@ export const Gearing = 3;
 export const Diff = 4;
 export const SuspBalance = 5;
 
-const setupMin: Setup = [1, 1, 50, 1, 1, 1];
-const setupMax: Setup = [11, 11, 70, 5, 10, 9];
+/** Garage ranges per setup index (inclusive); read-only. */
+export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1];
+export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9];
 
 export function defaultSetup(): Setup {
   return [6, 6, 58, 3, 5, 5];
