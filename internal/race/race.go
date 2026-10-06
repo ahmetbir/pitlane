@@ -76,6 +76,7 @@ type Events struct {
 	Laps         []LapEvent
 	Results      []ResultRow
 	PhaseChanged bool
+	WingLost     []CarID // cars whose front wing came off this tick (full contact)
 }
 
 type Race struct {
@@ -239,8 +240,7 @@ func (r *Race) car(id CarID) *Car {
 // botInput is the bot driver seam (Task 9); until then bots coast.
 func botInput(c *Car) car.Input { return car.Input{} }
 
-func (r *Race) timing()          {} // Task 8: laps, sectors, positions, finish
-func (r *Race) resolveContacts() {} // Task 7: car-to-car contact
+func (r *Race) timing() {} // Task 8: laps, sectors, positions, finish
 
 // Step advances one tick. Cars are visited in ID order; inputs are looked up, never iterated.
 func (r *Race) Step(inputs map[CarID]car.Input) Events {
@@ -259,7 +259,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			moveCar(&c.St, &c.P, in, r.tr, &c.Seg)
 		}
 		if r.phase != Lights {
-			r.resolveContacts()
+			ev.WingLost = r.resolveContacts()
 			r.timing()
 		}
 	}
