@@ -1,8 +1,8 @@
 // The driver's manual in English: the same structure as tr.ts. Numbers come from parts.ts (code, settings, rules).
-import { TC } from "../car/car.ts";
+import { ABS, TC } from "../car/car.ts";
 import { keysLabel } from "../input/bindings.ts";
 import { b, figure, kbd, list, note, p, steps, sub, type BookCtx, type ChapterBody } from "./kit.ts";
-import { chord, F, keyOf, keyTable, launchTable, lightsArt, padTable, RULES as R, settingName, setupTable, tcTable, z100Art } from "./parts.ts";
+import { absTable, chord, F, keyOf, keyTable, pairOf, launchTable, lightsArt, padTable, RULES as R, settingName, setupTable, tcTable, z100Art } from "./parts.ts";
 import type { ChapterName } from "./chapters.ts";
 
 const start = ({ keys }: BookCtx) => [
@@ -31,6 +31,15 @@ const controls = ({ keys }: BookCtx) => [
   sub("Gamepad"),
   p(`Any gamepad with the standard mapping works (Xbox, PlayStation and the like). The moment you touch a trigger, button or stick the pad takes the car; leave it for ${F.padHoldS} s and the keyboard is back.`),
   padTable(),
+  sub("Changing the car while racing"),
+  p("Four settings can be changed on the track; each press moves one step and the HUD readout lights the new value. Hardware settings (wings, gearing, suspension) change in the garage only."),
+  list(
+    [pairOf(keys, "bbBack", "bbFwd"), ": brake bias 1 % rearward / forward."],
+    [pairOf(keys, "diffDown", "diffUp"), ": differential one step more open / more locked."],
+    [pairOf(keys, "tcDown", "tcUp"), ": traction control one level down / up (Sim rooms; Arcade is fixed)."],
+    [pairOf(keys, "absDown", "absUp"), ": ABS one level down / up (Sim rooms; Arcade is fixed)."],
+    ["On a gamepad the d-pad does it: up / down brake bias, left / right traction control. The change is stored, so the next race starts with it."],
+  ),
   sub("Brake and reverse"),
   list(
     [keyOf(keys, "brake"), " is always the brake."],
@@ -48,18 +57,22 @@ const handling = () => [
   list(
     [`The tyres grip ${F.arcadeGrip()} more.`],
     [`Traction control is always on. Its share is Sim level 3's (${F.arcadeTC()}), measured on the rear grip that cornering leaves.`],
-    ["ABS is always on: each axle's brake stays within the grip cornering leaves it, so you can turn while braking."],
+    [`ABS is always on, at the level-1 share (${F.arcadeABS()}): each axle's brake stays within the grip cornering leaves it, so you can turn while braking.`],
     ["A stability aid limits the car's rotation; the steering reacts faster and turns less the faster you go."],
+    ["Steering assist: full lock never asks for more than the front tyres' peak grip, so turning the wheel further cannot wash the nose wide."],
   ),
   sub("Sim"),
   list(
-    ["Normal grip; no stability aid. You pick ABS in the garage: Off, 1, 2 or 3. With it off, steer while braking hard and the front tyres spend all their grip on the brakes: the car goes straight on."],
+    [`Normal grip; no stability aid. You pick ABS in the garage: Off, 1, 2 or 3; the default is ${F.simDefaultABS()}. With it off, steer while braking hard and the front tyres spend all their grip on the brakes: the car goes straight on.`],
     [`You pick traction control in the garage: Off, 1, 2 or 3. The default is ${F.simDefaultTC()}.`],
   ),
   sub("Traction control levels"),
   p("Traction control (TC) lets the throttle use only a share of the grip the rear tyres have left after cornering. The smaller the share, the safer the car, and the slower it accelerates."),
   tcTable(),
   figure(z100Art(), "0–100 km/h: default setup, full throttle on a straight, from idle. Sim at every TC level, and Arcade to compare. The times are measured on the car model itself."),
+  sub("ABS levels"),
+  p("ABS lets each axle's brake use only a share of the grip that cornering leaves it, so the car keeps turning while it slows. Off, the brakes may take all of it: hard braking in a corner locks the fronts and the car goes straight on, or spins if the rear locks."),
+  absTable(),
   sub("What to expect with a keyboard"),
   list(
     [`A key is all or nothing: the throttle is full after ${F.throttleRampS()} s. With TC off that means full throttle in a corner; the rear slides and the car turns round.`],
@@ -93,6 +106,10 @@ const garage = () => [
   sub(settingName(TC)),
   p("The levels and what they do are in the Arcade and Sim chapter. Your level applies in Sim rooms only; Arcade always runs 3."),
   list([b("Raise"), ": safer exits, slower acceleration."], [b("Lower"), ": quicker acceleration; it asks for more care on the throttle."]),
+  sub(settingName(ABS)),
+  p("The levels are in the Arcade and Sim chapter. Your level applies in Sim rooms only; Arcade always runs at 1."),
+  list([b("Raise"), ": more stability under braking, a longer braking distance."], [b("Lower"), ": shorter braking, but a wheel may lock; Off asks for a clean line."]),
+  p("Brake bias, differential, traction control and ABS can also be changed while racing (see Controls)."),
   note("tip", "Not sure? Reset to default: the default setup is a balanced start. Change one setting at a time and feel the difference."),
 ];
 
@@ -108,6 +125,7 @@ const race = () => [
   figure(lightsArt(), "The lights come on a second apart; when all go out, the race is on."),
   sub("Jump start"),
   p(`Move more than ${R.jumpStartM} m off your grid slot while the lights are on and ${R.jumpStartPenS} s are added to your total time. Throttle with the brake held (a launch hold) does not move the car and is no jump start.`),
+  p(`The moment it happens a red banner, "${F.jumpBanner()}", shows for a few seconds and a ${F.jumpBadge()} badge stays on your HUD for the rest of the race; the other drivers see a short line with your name. The penalty also shows in the results table.`),
   sub("Laps, sectors and validity"),
   list(
     ["A lap has three sectors. On the HUD purple is the fastest in the room, green your own best, yellow slower."],

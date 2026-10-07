@@ -4,7 +4,7 @@
 // and coasts (app.ts blocks the controls); Escape closes it.
 import { fill, h } from "roomkit/ui/dom";
 import { t } from "../i18n/index.ts";
-import { keyRows, keysLabel, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";
+import { cardRows, keysLabel, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";
 
 export type CardOpts = {
   /** After it closed (the first-race card: remember it was seen). */
@@ -55,7 +55,7 @@ export class ControlsCard {
     fill(this.el, h("div", { class: "panel" },
       h("h2", { id: "controls-title" }, t("card.controls")),
       h("div", { class: "card-cols" },
-        h("section", {}, h("h3", {}, t("card.keyboard")), rows(keyRows(b))),
+        h("section", {}, h("h3", {}, t("card.keyboard")), rows(cardRows(b))),
         h("section", {}, h("h3", {}, t("card.gamepad")), rows(padRows()))),
       h("p", { class: "muted hint" }, t("card.again", { keys: b.help.length ? `${keysLabel(b.help)} / ?` : "?" })),
       h("div", { class: "actions" }, change, manual, ok)));

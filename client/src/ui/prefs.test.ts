@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { defaultSetup, type Setup } from "../car/car.ts";
+import { ABS, defaultSetup, TC, type Setup } from "../car/car.ts";
 import { defaultBindings, rebind } from "../input/bindings.ts";
-import { adjust, SLIDERS, tcEffect, tcName, TC_LEVELS } from "./garage.ts";
+import { ABS_ROW, adjust, levelShown, resetSetup, SLIDERS, tcEffect, tcName, TC_LEVELS } from "./garage.ts";
 import { setLang } from "../i18n/index.ts";
 import { defaultSettings, loadSettings, loadSetup, saveSettings, saveSetup, storedName, storeName } from "./prefs.ts";
 
@@ -77,4 +77,16 @@ test("garage: traction control Off..3 with its effect and measured 0–100", () 
   assert.match(tcEffect(3), /0–100 km\/sa ≈ 5,8 sn\.$/);
   assert.deepEqual(adjust(defaultSetup(), 6, 0), [6, 6, 58, 3, 5, 5, 0, 1]);
   assert.deepEqual(adjust(defaultSetup(), 7, 0), [6, 6, 58, 3, 5, 5, 1, 0]);
+});
+
+test("garage: the ABS row is locked at 1 in Arcade whatever is stored; reset restores the default", () => {
+  assert.equal(ABS_ROW.lockedLevel, 1);
+  assert.equal(levelShown(ABS_ROW, 3, true), 1, "Arcade: locked at 1");
+  assert.equal(levelShown(ABS_ROW, 0, true), 1);
+  assert.equal(levelShown(ABS_ROW, 3, false), 3, "Sim: the stored level");
+  const st = new Mem();
+  const s = saveSetup(adjust(adjust(defaultSetup(), ABS, 3), TC, 0), st);
+  assert.deepEqual([s[TC], s[ABS]], [0, 3]);
+  assert.equal(resetSetup(st)[ABS], defaultSetup()[ABS]);
+  assert.deepEqual(loadSetup(st), defaultSetup(), "stored too");
 });

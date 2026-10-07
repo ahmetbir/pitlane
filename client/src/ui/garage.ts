@@ -43,7 +43,17 @@ export function tcEffect(level: number): string {
 }
 
 /** What a level row shows: its name, the effect line per level, and its Arcade lock. */
-type LevelRow = { label: Key; fx(level: number): string; lockedLevel: number; lockedNote: Key; lockedFx: Key };
+export type LevelRow = { label: Key; fx(level: number): string; lockedLevel: number; lockedNote: Key; lockedFx: Key };
+
+/** The level a row shows: lockedLevel when locked (Arcade), else the stored one. */
+export function levelShown(r: Pick<LevelRow, "lockedLevel">, level: number, locked: boolean): number {
+  return locked ? r.lockedLevel : level;
+}
+
+/** The stored setup back at the default (the garage's reset). */
+export function resetSetup(store?: Parameters<typeof saveSetup>[1]): Setup {
+  return saveSetup(defaultSetup(), store);
+}
 
 /** A level row (0 = Off … 3); locked (Arcade): fixed at lockedLevel, not changeable. */
 function levelRow(r: LevelRow, level: number, locked: boolean, change: (v: number) => void): { el: HTMLElement; set(v: number): void } {
@@ -53,7 +63,7 @@ function levelRow(r: LevelRow, level: number, locked: boolean, change: (v: numbe
     show(x);
     change(x);
   });
-  let choice = make(locked ? r.lockedLevel : level);
+  let choice = make(levelShown(r, level, locked));
   const box = h("div", { class: "slider tc" }, h("span", { class: "slider-head" }, h("span", {}, t(r.label)),
     locked ? h("span", { class: "lock-note" }, t(r.lockedNote)) : null), choice, fx);
   if (locked) choice.querySelectorAll("button").forEach((b) => { b.disabled = true; });
@@ -70,8 +80,8 @@ function levelRow(r: LevelRow, level: number, locked: boolean, change: (v: numbe
   };
 }
 
-const TC_ROW: LevelRow = { label: "garage.tc", fx: tcEffect, lockedLevel: 3, lockedNote: "garage.tcLocked", lockedFx: "garage.tcArcade" };
-const ABS_ROW: LevelRow = { label: "garage.abs", fx: (v) => t(`garage.abs${v}Fx` as Key), lockedLevel: 1, lockedNote: "garage.absLocked", lockedFx: "garage.absArcade" };
+export const TC_ROW: LevelRow = { label: "garage.tc", fx: tcEffect, lockedLevel: 3, lockedNote: "garage.tcLocked", lockedFx: "garage.tcArcade" };
+export const ABS_ROW: LevelRow = { label: "garage.abs", fx: (v) => t(`garage.abs${v}Fx` as Key), lockedLevel: 1, lockedNote: "garage.absLocked", lockedFx: "garage.absArcade" };
 
 /**
  * The garage panel; done is called with the stored setup. handling: the
@@ -109,7 +119,7 @@ export function garagePanel(done: (s: Setup) => void, handling?: HandlingName): 
   });
   const reset = h("button", { type: "button", class: "btn ghost" }, t("garage.reset"));
   reset.addEventListener("click", () => {
-    setup = saveSetup(defaultSetup());
+    setup = resetSetup();
     show();
     tc.set(setup[TC]);
     abs.set(setup[ABS]);

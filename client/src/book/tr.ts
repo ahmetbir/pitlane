@@ -1,8 +1,8 @@
 // Sürücü el kitabı, Türkçe. Sayılar parts.ts'ten gelir (kod, ayarlar, kurallar); burada yalnız metin var.
-import { TC } from "../car/car.ts";
+import { ABS, TC } from "../car/car.ts";
 import { keysLabel } from "../input/bindings.ts";
 import { b, figure, kbd, list, note, p, steps, sub, type BookCtx, type ChapterBody } from "./kit.ts";
-import { chord, F, keyOf, keyTable, launchTable, lightsArt, padTable, RULES as R, settingName, setupTable, tcTable, z100Art } from "./parts.ts";
+import { absTable, chord, F, keyOf, keyTable, pairOf, launchTable, lightsArt, padTable, RULES as R, settingName, setupTable, tcTable, z100Art } from "./parts.ts";
 import type { ChapterName } from "./chapters.ts";
 
 const start = ({ keys }: BookCtx) => [
@@ -31,6 +31,15 @@ const controls = ({ keys }: BookCtx) => [
   sub("Gamepad"),
   p(`Standart eşlemeli her gamepad çalışır (Xbox, PlayStation ve benzerleri). Bir tetiğe, tuşa ya da çubuğa dokunduğun an gamepad arabayı alır; ${F.padHoldS} sn hiç dokunmazsan klavye geri gelir.`),
   padTable(),
+  sub("Yarışta arabayı değiştirmek"),
+  p("Dört ayar pistte değiştirilebilir; her basış bir kademe oynatır ve HUD'daki gösterge yeni değeri yakar. Donanım ayarları (kanatlar, vites, süspansiyon) yalnız garajda değişir."),
+  list(
+    [pairOf(keys, "bbBack", "bbFwd"), ": fren dengesi %1 arkaya / öne."],
+    [pairOf(keys, "diffDown", "diffUp"), ": diferansiyel bir kademe daha açık / daha kilitli."],
+    [pairOf(keys, "tcDown", "tcUp"), ": çekiş kontrolü bir seviye azalır / artar (Sim odalarında; Arcade'de sabit)."],
+    [pairOf(keys, "absDown", "absUp"), ": ABS bir seviye azalır / artar (Sim odalarında; Arcade'de sabit)."],
+    ["Gamepad'de yön tuşları yapar: yukarı / aşağı fren dengesi, sol / sağ çekiş kontrolü. Değişiklik saklanır, sonraki yarış onunla başlar."],
+  ),
   sub("Fren ve geri vites"),
   list(
     [keyOf(keys, "brake"), " her zaman frendir."],
@@ -48,18 +57,22 @@ const handling = () => [
   list(
     [`Lastikler ${F.arcadeGrip()} daha fazla tutar.`],
     [`Çekiş kontrolü hep açıktır. Pay Sim'in 3. seviyesiyle aynıdır (${F.arcadeTC()}), virajın arka lastikte bıraktığı tutuş üzerinden ölçülür.`],
-    ["ABS hep açıktır: her aksın freni virajın ona bıraktığı tutuşun içinde kalır, frenlerken de dönebilirsin."],
+    [`ABS hep açıktır, 1. seviyenin payıyla (${F.arcadeABS()}): her aksın freni virajın ona bıraktığı tutuşun içinde kalır, frenlerken de dönebilirsin.`],
     ["Denge yardımı arabanın kendi etrafında dönmesini sınırlar; direksiyon daha çabuk tepki verir ve hız arttıkça daha az kırılır."],
+    ["Direksiyon yardımı: tam kilitte bile ön lastiklerin tutuş tepesinden fazlası istenmez; direksiyonu daha çok çevirmek burnu dışarı kaydırmaz."],
   ),
   sub("Sim"),
   list(
-    ["Normal tutuş; denge yardımı yok. ABS'yi garajda sen seçersin: Kapalı, 1, 2 ya da 3. Kapalıyken sert frenlerken direksiyon çevirirsen ön lastiklerin bütün tutuşu frene gider ve araba düz gider."],
+    [`Normal tutuş; denge yardımı yok. ABS'yi garajda sen seçersin: Kapalı, 1, 2 ya da 3; varsayılan ${F.simDefaultABS()}. Kapalıyken sert frenlerken direksiyon çevirirsen ön lastiklerin bütün tutuşu frene gider ve araba düz gider.`],
     [`Çekiş kontrolünü garajda sen seçersin: Kapalı, 1, 2 ya da 3. Varsayılan ${F.simDefaultTC()}.`],
   ),
   sub("Çekiş kontrolü seviyeleri"),
   p("Çekiş kontrolü (TC), arka lastiğin virajda kullanmadığı tutuşun yalnız bir payını gaza bırakır. Pay küçüldükçe araba daha güvenli, ama daha yavaş hızlanır."),
   tcTable(),
   figure(z100Art(), "0–100 km/sa: varsayılan ayar, düz yolda tam gaz, rölantiden. Sim'de her TC seviyesi ve karşılaştırma için Arcade. Süreler araba modelinin kendisinde ölçülür."),
+  sub("ABS seviyeleri"),
+  p("ABS, her aksın freninin virajın ona bıraktığı tutuşun yalnız bir payını kullanmasını sağlar; böylece araba yavaşlarken de dönmeye devam eder. Kapalıyken frenler hepsini alabilir: virajda sert frenleyince ön tekerlekler kilitlenir ve araba düz gider, arka kilitlenirse döner."),
+  absTable(),
   sub("Klavyeyle ne beklemeli"),
   list(
     [`Klavye tuşu ya hep ya hiçtir: gaz ${F.throttleRampS()} sn'de tama çıkar. TC kapalıyken bu virajda tam gaz demektir; arka kayar ve araba döner.`],
@@ -93,6 +106,10 @@ const garage = () => [
   sub(settingName(TC)),
   p("Seviyeler ve etkisi Arcade ve Sim bölümünde. Yalnız Sim odalarında senin seviyen geçerlidir; Arcade'de hep 3."),
   list([b("Yükselt"), ": daha güvenli çıkış, daha yavaş ivme."], [b("Düşür"), ": daha hızlı ivme; gazda daha çok özen ister."]),
+  sub(settingName(ABS)),
+  p("Seviyeler Arcade ve Sim bölümünde. Yalnız Sim odalarında senin seviyen geçerlidir; Arcade'de hep 1."),
+  list([b("Yükselt"), ": frenlerken daha kararlı, fren mesafesi daha uzun."], [b("Düşür"), ": daha kısa fren mesafesi, ama tekerlek kilitlenebilir; Kapalı temiz bir çizgi ister."]),
+  p("Fren dengesi, diferansiyel, çekiş kontrolü ve ABS yarışırken de değiştirilebilir (bkz. Kontroller)."),
   note("tip", "Emin olmadığında Varsayılana dön: varsayılan ayar dengeli bir başlangıçtır. Bir seferde tek ayarı değiştir, farkı hisset."),
 ];
 
@@ -108,6 +125,7 @@ const race = () => [
   figure(lightsArt(), "Işıklar birer saniye arayla yanar; hepsi sönünce yarış başlar."),
   sub("Erken kalkış"),
   p(`Işıklar yanarken araban grid yerinden ${R.jumpStartM} m'den fazla kıpırdarsa toplam süreye ${R.jumpStartPenS} sn ceza eklenir. Fren basılıyken gaz vermek (kalkış tutuşu) arabayı kıpırdatmaz, ceza değildir.`),
+  p(`Olduğu anda kırmızı bir bant, "${F.jumpBanner()}", birkaç saniye görünür ve ${F.jumpBadge()} rozeti yarışın sonuna kadar HUD'da kalır; diğer sürücüler adınla kısa bir satır görür. Ceza sonuç tablosunda da görünür.`),
   sub("Turlar, sektörler ve geçerlilik"),
   list(
     ["Tur üç sektöre bölünür. HUD'da mor: odanın en hızlısı, yeşil: kendi en iyin, sarı: daha yavaş."],

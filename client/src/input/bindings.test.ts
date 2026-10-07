@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLang } from "../i18n/index.ts";
-import { ACTIONS, actionMap, bindable, cleanBindings, defaultBindings, keyName, keyRows, keysLabel, padRows, rebind, unbind } from "./bindings.ts";
+import { ACTIONS, actionMap, cardRows, bindable, cleanBindings, defaultBindings, keyName, keyRows, keysLabel, padRows, rebind, unbind } from "./bindings.ts";
 
 test("defaults: every action bound, each code once", () => {
   const b = defaultBindings();
@@ -60,4 +60,11 @@ test("key names and rows in both languages", () => {
   setLang("tr", null);
   assert.equal(keyName("Space"), "Boşluk");
   assert.equal(keyRows(defaultBindings())[0][1], "Gaz");
+});
+
+test("the controls card folds the eight live keys into four pairs", () => {
+  setLang("en", null);
+  const rows = cardRows(defaultBindings());
+  assert.equal(rows.length, ACTIONS.length - 4);
+  assert.deepEqual(rows.slice(-4), [["1 / 2", "TC − / + (while racing)"], ["3 / 4", "ABS − / + (while racing)"], ["5 / 6", "Brake bias ← / → (while racing)"], ["7 / 8", "Diff open / locked (while racing)"]]);
 });

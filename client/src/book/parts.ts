@@ -31,6 +31,10 @@ export const F = {
   arcadeGrip: () => pct(newParams(Handling.Arcade, defaultSetup(), noDamage()).mu / newParams(Handling.Sim, defaultSetup(), noDamage()).mu - 1),
   arcadeTC: () => pct(newParams(Handling.Arcade, defaultSetup(), noDamage()).tcShare),
   simDefaultTC: () => tcName(defaultSetup()[TC]),
+  jumpBanner: () => t("hud.jump", { n: RULES.jumpStartPenS }),
+  jumpBadge: () => t("hud.pen", { n: RULES.jumpStartPenS }),
+  simDefaultABS: () => tcName(defaultSetup()[ABS]),
+  arcadeABS: () => pct(newParams(Handling.Arcade, defaultSetup(), noDamage()).absShare),
   wingLost: () => pct(RULES.wingLost),
   lostWingCL: () => pct(RULES.lostWingCL),
   suspLoss: () => pct(RULES.suspLoss),
@@ -40,6 +44,9 @@ export const F = {
 
 /** A binding's keys as a key cap ("W / ↑"). */
 export const keyOf = (b: Bindings, a: Action) => kbd(keysLabel(b[a]));
+
+/** A live-adjust key pair as a key cap: "1 / 2". */
+export const pairOf = (b: Bindings, lo: Action, hi: Action) => kbd(`${keysLabel(b[lo])} / ${keysLabel(b[hi])}`);
 
 /** A chord as a key cap: "Shift + W". */
 export const chord = (b: Bindings, a: Action, with_: Action) => kbd(`${firstKey(b, a) || "–"} + ${firstKey(b, with_) || "–"}`);
@@ -62,13 +69,18 @@ export function setupTable(): HTMLElement {
 }
 
 /** A garage setting's name (the book's sub-headings match the garage). */
-export const settingName = (i: number): string => (i === TC ? t("garage.tc") : t(SLIDERS[i].label));
+export const settingName = (i: number): string => (i === TC ? t("garage.tc") : i === ABS ? t("garage.abs") : t(SLIDERS[i].label));
 
 /** TC levels: the share of the rear grip the throttle may use and the Sim 0–100 km/h. */
 export function tcTable(): HTMLElement {
   return table([t("bt.level"), t("bt.share"), t("bt.z100")], TC_LEVELS.map((l) => [
     tcName(l), l === 0 ? t("bt.noLimit") : pct(assistShares[l]), `${sec(zeroTo100(Handling.Sim, l), 2)} ${t("bt.s")}`,
   ]));
+}
+
+/** ABS levels: the share of the grip cornering leaves that the brakes may use. */
+export function absTable(): HTMLElement {
+  return table([t("bt.level"), t("bt.shareAbs")], TC_LEVELS.map((l) => [tcName(l), l === 0 ? t("bt.noLimit") : pct(assistShares[l])]));
 }
 
 type Mode = { name: string; h: Handling; tc: number };

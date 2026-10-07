@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { defaultSetup, Handling, launchRPM, newParams, noDamage, setupMax, setupMin, assistShares } from "../car/car.ts";
+import { ABS, defaultSetup, Handling, launchRPM, newParams, noDamage, setupMax, setupMin, assistShares } from "../car/car.ts";
 import { zeroTo100 } from "../car/measure.ts";
 import { setLang } from "../i18n/index.ts";
 import { defaultBindings, keyRows, padRows, rebind, type Bindings } from "../input/bindings.ts";
@@ -99,6 +99,13 @@ test("the manual quotes the code's numbers", () => {
     assert.ok(garage.includes(`${defaultSetup()[2]} : ${100 - defaultSetup()[2]}`), "the default brake bias");
     const race = textOf("yaris");
     for (const s of [`${RULES.jumpStartM} m`, `${RULES.jumpStartPenS} s`, `${RULES.offTrackS} s`, `${RULES.finishWindowS} s`, `${RULES.drivableDeg}°`]) assert.ok(race.includes(s), s);
+    assert.ok(race.includes(`JUMP START · +${RULES.jumpStartPenS} s penalty`) && race.includes(`+${RULES.jumpStartPenS} s badge`), "the jump-start banner and badge");
+    assert.ok(handling.includes("ABS levels") && handling.includes("Grip left to the brakes"), "the ABS table");
+    assert.ok(handling.includes(`level-1 share (${Math.round(newParams(Handling.Arcade, defaultSetup(), noDamage()).absShare * 100)}%)`), "Arcade ABS from the params");
+    assert.ok(handling.includes(`the default is ${defaultSetup()[ABS]}`), "Sim ABS default from the setup");
+    assert.ok(garage.includes("Off … 3") && garage.includes("Arcade always runs at 1"), "the garage has its ABS section");
+    for (const k of ["1 / 2", "3 / 4", "5 / 6", "7 / 8"]) assert.ok(controls.includes(k), `live keys ${k}`);
+    assert.ok(controls.includes("Changing the car while racing"));
     const launch = textOf("kalkis");
     assert.ok(launch.includes(`${launchRPM} rpm`));
     const gain = zeroTo100(Handling.Arcade, 3) - zeroTo100(Handling.Arcade, 3, true);
