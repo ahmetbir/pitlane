@@ -6,6 +6,7 @@ package vectors
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 
 	"github.com/ahmetbir/pitlane/internal/car"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	carCases   = 40
+	carCases   = 40 // random cases; the scripted ones follow
 	carTicks   = 600
 	sampleEach = 30
 	trackCases = 50
@@ -51,7 +52,7 @@ type carCase struct {
 	Dmg      car.Damage  `json:"dmg"`
 	Params   car.Params  `json:"params"`
 	Init     car.State   `json:"init"`
-	Inputs   [][3]int8   `json:"inputs"` // wire units: th/100, br/100, st/127, one per tick
+	Inputs   [][4]int8   `json:"inputs"` // wire units: th/100, br/100, st/127, rv 0|1, one per tick
 	Env      []envSeg    `json:"env"`
 	States   []car.State `json:"states"` // after ticks 30, 60, …
 }
@@ -70,7 +71,61 @@ func Car() []byte {
 	for i := 0; i < carCases; i++ {
 		f.Cases = append(f.Cases, makeCarCase(r, i))
 	}
+	for i, sc := range scripts() {
+		f.Cases = append(f.Cases, scriptedCase(carCases+i, sc))
+	}
 	return marshal(f)
+}
+
+// seg is a scripted stretch of input: n ticks of th, br, st, rv (wire units).
+type seg struct {
+	n              int
+	th, br, st, rv int8
+}
+
+type script struct {
+	h    car.Handling
+	tc   int
+	vx   float64 // initial forward speed
+	segs []seg
+}
+
+// scripts are the TC, reverse and launch cases (40..47), each 600 ticks.
+func scripts() []script {
+	flick := []seg{{90, 100, 0, 127, 0}, {60, 100, 0, 0, 0}, {90, 100, 0, -127, 0}, {360, 100, 0, 0, 0}}
+	return []script{
+		{car.Sim, 1, 30, flick}, // 40..42: Sim TC 1..3, full throttle through a flick
+		{car.Sim, 2, 30, flick},
+		{car.Sim, 3, 30, flick},
+		{car.Arcade, 0, 30, flick}, // 43: Arcade acts as TC 3 whatever the setting
+		// 44: Sim reverse from rest, steering while backing up, then forward again.
+		{car.Sim, 2, 0, []seg{{120, 100, 0, 0, 1}, {120, 100, 0, 127, 1}, {60, 0, 0, 0, 0}, {180, 100, 0, 0, 0}, {120, 0, 100, 0, 0}}},
+		// 45: Arcade reverse selected while rolling forward (brakes), then backs up and stops.
+		{car.Arcade, 2, 15, []seg{{200, 100, 0, 0, 1}, {100, 100, 0, -90, 1}, {120, 0, 100, 0, 0}, {180, 60, 0, 0, 0}}},
+		// 46: Sim TC 2 launch: hold, release, steer, brake.
+		{car.Sim, 2, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}},
+		// 47: Arcade launch on part throttle, then brake and throttle at speed down to a new hold.
+		{car.Arcade, 2, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}},
+	}
+}
+
+func scriptedCase(i int, sc script) carCase {
+	s := car.DefaultSetup()
+	s[car.TC] = sc.tc
+	p := car.NewParams(sc.h, s, car.Damage{})
+	a := 0.3 * float64(i-carCases)
+	st := car.State{X: float64(10 * i), Z: -20, H: a, HX: math.Cos(a), HZ: math.Sin(a), VX: sc.vx, RPM: 4000, Gear: 1}
+	c := carCase{Handling: sc.h.String(), Setup: s, Params: p, Init: st, Env: []envSeg{{Mu: 1}}}
+	for _, g := range sc.segs {
+		for k := 0; k < g.n; k++ {
+			c.Inputs = append(c.Inputs, [4]int8{g.th, g.br, g.st, g.rv})
+		}
+	}
+	if len(c.Inputs) != carTicks {
+		panic(fmt.Sprintf("vectors: script %d has %d ticks", i, len(c.Inputs)))
+	}
+	c.play(st, p)
+	return c
 }
 
 func makeCarCase(r *rng, i int) carCase {
@@ -98,7 +153,7 @@ func makeCarCase(r *rng, i int) carCase {
 	c := carCase{Handling: h.String(), Setup: s, Dmg: d, Params: p, Init: st}
 	for t := 0; t < carTicks; {
 		n := min(r.rangeI(10, 60), carTicks-t)
-		in := [3]int8{int8(r.rangeI(40, 100)), 0, int8(r.rangeI(-127, 127))}
+		in := [4]int8{int8(r.rangeI(40, 100)), 0, int8(r.rangeI(-127, 127)), 0}
 		if r.float() < 0.3 {
 			in[0], in[1] = int8(r.rangeI(0, 30)), int8(r.rangeI(30, 100))
 		}
@@ -119,18 +174,24 @@ func makeCarCase(r *rng, i int) carCase {
 		sf.T = t
 		c.Env = append(c.Env, sf)
 	}
+	c.play(st, p)
+	return c
+}
+
+// play steps st through c's inputs and environment, sampling every sampleEach ticks.
+func (c *carCase) play(st car.State, p car.Params) {
 	e := 0
 	for t := 0; t < carTicks; t++ {
 		for e+1 < len(c.Env) && c.Env[e+1].T <= t {
 			e++
 		}
-		in := protocol.Input{Th: c.Inputs[t][0], Br: c.Inputs[t][1], St: c.Inputs[t][2]}
+		w := c.Inputs[t]
+		in := protocol.Input{Th: w[0], Br: w[1], St: w[2], Rv: w[3] == 1}
 		car.Step(&st, &p, in.Car(), car.Env{Mu: c.Env[e].Mu, Drag: c.Env[e].Drag})
 		if (t+1)%sampleEach == 0 {
 			c.States = append(c.States, st)
 		}
 	}
-	return c
 }
 
 type trackCase struct {

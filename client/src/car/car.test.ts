@@ -20,7 +20,7 @@ interface GoParams {
 }
 interface CarCase {
   handling: string; setup: Setup; dmg: GoDamage; params: GoParams; init: GoState;
-  inputs: [number, number, number][]; env: { t: number; mu: number; drag: number }[]; states: GoState[];
+  inputs: [number, number, number, number][]; env: { t: number; mu: number; drag: number }[]; states: GoState[];
 }
 interface CarFile { dt: number; ticks: number; sampleEach: number; cases: CarCase[] }
 
@@ -54,7 +54,7 @@ test("DT matches Go", () => {
 });
 
 test("newParams matches Go bit for bit", () => {
-  assert.equal(file.cases.length, 40);
+  assert.equal(file.cases.length, 48); // 40 random, then the TC, reverse and launch scripts
   file.cases.forEach((c, i) => {
     const [h, ok] = parseHandling(c.handling);
     assert.ok(ok);
@@ -71,9 +71,9 @@ test("step replays Go's car vectors bit for bit", () => {
     let e = 0, k = 0;
     for (let t = 0; t < file.ticks; t++) {
       while (e + 1 < c.env.length && c.env[e + 1].t <= t) e++;
-      const [th, br, sr] = c.inputs[t];
+      const [th, br, sr, rv] = c.inputs[t];
       // protocol.Input.Car(): wire integers to floats.
-      step(st, p, { throttle: th / 100, brake: br / 100, steer: sr / 127 }, { mu: c.env[e].mu, drag: c.env[e].drag });
+      step(st, p, { throttle: th / 100, brake: br / 100, steer: sr / 127, reverse: rv === 1 }, { mu: c.env[e].mu, drag: c.env[e].drag });
       if ((t + 1) % file.sampleEach === 0) {
         exact(st, state(c.states[k]), `case ${i} tick ${t + 1}`);
         k++;
@@ -100,4 +100,12 @@ test("non-finite input is ignored", () => {
   step(b, p, { throttle: 0, brake: 0, steer: 0 }, { mu: 0, drag: 0 });
   exact(a, b, "nan");
   assert.ok(speed(a) > 0 && speed(a) < 20);
+});
+
+test("the scripted vectors cover TC levels, reverse and launch", () => {
+  const sc = file.cases.slice(40);
+  assert.deepEqual(sc.map((c) => [c.handling, c.setup[6]]), [["sim", 1], ["sim", 2], ["sim", 3], ["arcade", 0], ["sim", 2], ["arcade", 2], ["sim", 2], ["arcade", 2]]);
+  assert.ok(sc[4].states.some((s) => s.Gear === 0 && s.VX < -7.5), "case 44 backs up at about 8 m/s");
+  assert.ok(sc[5].inputs.some((w) => w[3] === 1) && sc[5].states.some((s) => s.Gear === 0), "case 45 reverses");
+  for (const c of [sc[6], sc[7]]) assert.ok(c.states.some((s) => s.Launch && s.VX === 0 && s.RPM > 4000), "launch hold");
 });
