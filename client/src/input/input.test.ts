@@ -328,3 +328,23 @@ test("a screen over the race (manual, controls card): neutral input, keys keep t
   r.down("KeyW");
   assert.equal(r.c.sample(0.15).th, 100, "pressed again: drives");
 });
+
+test("a key releases what its keydown started: ? with Shift let go first works every time", () => {
+  const r = rig();
+  for (let i = 0; i < 3; i++) {
+    r.fire("keydown", { code: "ShiftLeft", key: "Shift", shiftKey: true, target: {} });
+    r.fire("keydown", { code: "Slash", key: "?", shiftKey: true, target: {} });
+    r.fire("keyup", { code: "ShiftLeft", key: "Shift", target: {} });
+    r.fire("keyup", { code: "Slash", key: "/", target: {} }); // Shift already up: the key reads "/"
+    assert.equal(r.c.take("help"), true, `press ${i + 1}`);
+  }
+  r.down("F1");
+  assert.equal(r.c.take("help"), true, "F1 after ? still works");
+  r.up("F1");
+  r.down("KeyW");
+  r.down("ArrowUp");
+  r.up("KeyW");
+  assert.equal(r.c.sample(0.15).th, 100, "↑ still held: throttle stays on");
+  r.up("ArrowUp");
+  assert.equal(r.c.sample(0.016).th, 0);
+});

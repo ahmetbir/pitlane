@@ -70,7 +70,9 @@ function rescale(v: number, dz: number): number {
 }
 
 export class Controls {
-  private readonly held = new Set<Action>();
+  // Held keys by the code that pressed them: a keyup releases what its keydown started,
+  // whatever the bindings or the typed character say by then ("?" pressed, "/" released).
+  private readonly keysDown = new Map<string, Action>();
   private readonly pressed = new Set<Action>(); // one-shot presses: camera, help
   private keys: Map<string, Action>;
   private th = 0;
@@ -135,12 +137,12 @@ export class Controls {
 
   /** True while the look-back key is held. */
   get lookBack(): boolean {
-    return this.held.has("lookBack");
+    return this.holding("lookBack");
   }
 
   sample(dtS: number): WireInput {
     if (this.deps.blocked?.()) { // the car coasts; keys held under the screen do not count after it
-      this.held.clear();
+      this.keysDown.clear();
       this.th = this.br = this.st = 0;
       return wireInput({ throttle: 0, brake: 0, steer: 0 });
     }
@@ -154,15 +156,15 @@ export class Controls {
       return wireInput({ throttle: this.th, brake: this.br, steer: this.st, reverse: pad.rv });
     }
     const dt = Number.isFinite(dtS) && dtS > 0 ? dtS : 0;
-    const go = this.held.has("throttle");
-    const back = this.held.has("brakeReverse");
+    const go = this.holding("throttle");
+    const back = this.holding("brakeReverse");
     // Throttle held, the brake/reverse key brakes (W+S stopped is a launch hold too).
     const reverse = back && stopped && !go;
-    const launch = go && stopped && this.held.has("launch");
-    const brake = this.held.has("brake") || (back && !reverse) || launch;
+    const launch = go && stopped && this.holding("launch");
+    const brake = this.holding("brake") || (back && !reverse) || launch;
     this.th = go || reverse ? Math.min(1, this.th + dt / THROTTLE_RAMP_S) : 0;
     this.br = brake ? Math.min(1, this.br + dt / BRAKE_RAMP_S) : 0;
-    const dir = (this.held.has("left") ? 1 : 0) - (this.held.has("right") ? 1 : 0);
+    const dir = (this.holding("left") ? 1 : 0) - (this.holding("right") ? 1 : 0);
     const rate = dir === 0 ? STEER_RETURN : STEER_RISE;
     const d = dir * 1 - this.st;
     const step = rate * dt;
@@ -170,13 +172,19 @@ export class Controls {
     return wireInput({ throttle: this.th, brake: this.br, steer: this.st, reverse });
   }
 
+  /** Whether any key of action a is down. */
+  private holding(a: Action): boolean {
+    for (const x of this.keysDown.values()) if (x === a) return true;
+    return false;
+  }
+
   private key(e: KeyboardEvent, isDown: boolean): void {
-    const a = this.keys.get(e.code) ?? (e.key === "?" ? "help" : undefined);
-    if (!a) return;
     if (!isDown) {
-      this.held.delete(a);
+      this.keysDown.delete(e.code);
       return;
     }
+    const a = this.keys.get(e.code) ?? (e.key === "?" ? "help" : undefined);
+    if (!a) return;
     if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
     if (this.deps.blocked?.()) {
       if (a !== "help") return;
@@ -185,12 +193,12 @@ export class Controls {
       return;
     }
     if (NO_DEFAULT.has(e.code)) e.preventDefault?.();
-    if ((a === "camera" || a === "help") && !this.held.has(a)) this.pressed.add(a);
-    this.held.add(a);
+    if ((a === "camera" || a === "help") && !this.holding(a)) this.pressed.add(a);
+    this.keysDown.set(e.code, a);
   }
 
   private release(): void {
-    this.held.clear();
+    this.keysDown.clear();
     this.pressed.clear();
     this.th = this.br = this.st = 0;
   }
