@@ -21,7 +21,7 @@ function fakeCtx() {
     createBiquadFilter: () => mk("filter", ["frequency", "Q", "gain"]),
     createWaveShaper: () => mk("shaper", []),
     createPeriodicWave: () => ({}),
-    createBufferSource: () => mk("src", []),
+    createBufferSource: () => mk("src", ["playbackRate"]),
   };
   return { ctx: ctx as unknown as AudioContext, calls, nodes };
 }

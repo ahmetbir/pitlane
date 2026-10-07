@@ -133,18 +133,24 @@ test("a marshal reset is drawn as a jump, not a slide, under latency and jitter"
   }
 });
 
-test("lead carries a car forward along its heading and yaw; sample clamps the lead", () => {
+test("lead carries a car forward along its heading and yaw", () => {
   const row = { id: 2, x: 0, z: 0, h: Math.PI / 2, vx: 80, vy: 0, r: 0.5, delta: 0 } as unknown as CarRow;
   const l = lead(row, 0.15);
   assert.ok(Math.abs(l.x) < 1e-9 && Math.abs(l.z - 12) < 1e-9, "80 m/s for 150 ms along +z");
   assert.ok(Math.abs(l.h - (Math.PI / 2 + 0.075)) < 1e-12);
   assert.equal(lead(row, 0), row);
   assert.equal(lead(row, NaN), row);
+});
+
+test("sampleAt: the snapshots up to the newest, then the newest carried forward, capped", () => {
   const o = new Others();
-  for (let i = 0; i < 20; i++) o.push(i, [{ ...row, z: i * 80 / 60 }], 1000 + i * 1000 / 60);
-  const now = 1000 + 20 * 1000 / 60;
-  const base = o.sample(now)[0].z;
-  assert.ok(Math.abs(o.sample(now, 150)[0].z - base - 12) < 1e-6);
-  assert.ok(Math.abs(o.sample(now, 10_000)[0].z - base - 80 * MAX_LEAD_MS / 1000) < 1e-6, "lead is capped");
-  assert.equal(o.sample(now, -50)[0].z, base);
+  const at = (i: number) => ({ ...row(2, i * V / 60), vx: V });
+  for (let i = 0; i < 20; i++) o.push(i, [at(i)], 1000 + i * TICK_MS);
+  assert.ok(Math.abs(o.sampleAt(10)[0].x - at(10).x) < 1e-9, "inside the buffer: the snapshot itself");
+  assert.ok(Math.abs(o.sampleAt(25)[0].x - (at(19).x + V * 6 / 60)) < 1e-9, "6 ticks past the newest");
+  assert.ok(Math.abs(o.sampleAt(19 + 600)[0].x - (at(19).x + V * MAX_LEAD_MS / 1000)) < 1e-9, "capped");
+  assert.deepEqual(o.sampleAt(NaN), []);
+  // Steady: drawn at the own car's tick it advances evenly, one tick per tick, whatever the snapshot timing.
+  const xs = [20, 21, 22, 23].map((k) => o.sampleAt(k)[0].x);
+  for (let k = 1; k < xs.length; k++) assert.ok(Math.abs(xs[k] - xs[k - 1] - V / 60) < 1e-9);
 });

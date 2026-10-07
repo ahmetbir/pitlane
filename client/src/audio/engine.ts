@@ -24,7 +24,9 @@ export const OTHERS = 2;
 export const OTHER_RANGE_M = 120;
 
 const SMOOTH_S = 0.04;
-const LUMP_DEPTH = 3; // × lowWeight: 30 Hz low-passed white noise is about ±0.1
+const LUMP_RATE = 0.37; // the 2 s noise buffer repeats every ~5.4 s
+const LUMP_OFFSET_S = 0.73;
+const LUMP_DEPTH = 3; // × lowWeight: 30 Hz low-passed white noise is about ±0.07
 const thumpCooldownS = 0.12;
 const wallDropMS = 5; // a one-frame speed loss above this is a wall hit
 
@@ -168,9 +170,10 @@ export class CarAudio implements Voices {
     const lumpSrc = ctx.createBufferSource();
     lumpSrc.buffer = noise;
     lumpSrc.loop = true;
+    lumpSrc.playbackRate.value = LUMP_RATE; // apart from the squeal's copy, and a longer cycle
     this.lump = gain(ctx, LUMP_DEPTH);
     lumpSrc.connect(filter(ctx, "lowpass", 30, 0.7)).connect(this.lump).connect(banks.gain);
-    lumpSrc.start();
+    lumpSrc.start(0, LUMP_OFFSET_S);
     this.drive.connect(shaper).connect(this.scream).connect(this.lp).connect(this.engine).connect(master);
 
     const src = ctx.createBufferSource();

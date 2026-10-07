@@ -1,19 +1,21 @@
-// Other cars: snapshot rows interpolated 100 ms behind the server through
-// roomkit's InterpBuffer (positions and velocities lerped, heading along the
-// shortest arc, discrete fields from the nearer snapshot), then carried
-// forward by their own velocity to the own car's predicted time (sample's
-// lead): the own car is drawn ahead of the server, and a car drawn in the past
-// beside it is metres behind where the server has it (12 m at 80 m/s and
-// 150 ms), so a hit would show seconds after the cars seemed to touch. A teleport is
+// Other cars: snapshot rows through roomkit's InterpBuffer (positions and
+// velocities lerped, heading along the shortest arc, discrete fields from the
+// nearer snapshot). In a race they are drawn at the own car's predicted tick
+// (sampleAt): the snapshots up to the newest, then the newest carried along its
+// own velocity and yaw rate (lead) for the ticks the prediction runs ahead.
+// Drawn 100 ms in the past beside a predicted own car, a car was metres
+// behind where the server had it (12 m at 80 m/s), so a hit showed seconds
+// after the cars seemed to touch. sample (100 ms behind) remains for when the
+// own car is not seated. A teleport is
 // drawn as one: any move above 8 m between snapshots (back to the grid), and
 // a marshal reset ("reset" message), whose move may be short.
 
-import { InterpBuffer, ServerClock } from "roomkit/predict/interp";
+import { extrapolate, InterpBuffer, ServerClock } from "roomkit/predict/interp";
 import type { CarRow } from "../net/protocol.ts";
 import { angleDiff } from "./own.ts";
 
 export const INTERP_DELAY_MS = 100;
-/** Longest lead a car is carried forward by (a stalled connection is not extrapolated further). */
+/** Longest a car is carried past its newest snapshot (a stalled connection is not extrapolated further). */
 export const MAX_LEAD_MS = 250;
 const TICK_MS = 1000 / 60;
 const JUMP_M = 8;  // a move this long between snapshots is never slid along
@@ -109,14 +111,30 @@ export class Others {
     this.cars.get(id)?.reset();
   }
 
-  /** Every car as drawn at local nowMs, by id, carried forward by leadMs (0 … MAX_LEAD_MS). */
-  sample(nowMs: number, leadMs = 0): CarRow[] {
+  /** Every car as drawn at local nowMs (100 ms behind the server), by id. */
+  sample(nowMs: number): CarRow[] {
     const at = this.clock.renderTime(nowMs);
-    const ahead = Math.min(Math.max(Number.isFinite(leadMs) ? leadMs : 0, 0), MAX_LEAD_MS) / 1000;
     const out: CarRow[] = [];
     for (const c of this.cars.values()) {
       const s = c.buf.sample(at);
-      if (s) out.push(lead(s, ahead));
+      if (s) out.push(s);
+    }
+    return out.sort((p, q) => p.id - q.id);
+  }
+
+  /**
+   * Every car at server tick (the own car's predicted one), by id:
+   * interpolated up to its newest snapshot, carried along its motion past it
+   * (at most MAX_LEAD_MS).
+   */
+  sampleAt(tick: number): CarRow[] {
+    const out: CarRow[] = [];
+    for (const c of this.cars.values()) {
+      const newest = c.buf.newest();
+      if (!newest || !Number.isFinite(tick)) continue;
+      const at = Math.min(this.clock.serverMs(tick), newest.t + MAX_LEAD_MS);
+      const s = extrapolate(c.buf, at, lead);
+      if (s) out.push(s);
     }
     return out.sort((p, q) => p.id - q.id);
   }
