@@ -15,22 +15,27 @@ func Step(st *State, p *Params, in Input, env Env) {
 		st.HX, st.HZ = 1, 0
 	}
 
-	// Steering: rate-limited toward the (Arcade: speed-scaled) target.
+	// Steering: rate-limited toward the target (Arcade: speed-scaled; both: peak-slip capped).
 	target := float64(in.Steer * steerLock)
 	if p.Assists {
 		target = target / (1 + max(st.VX, 0)/arcadeVX)
-		if st.VX > slipVX {
-			// Arcade steering assist: the wheel turns no further than the
-			// front tyres' peak slip, αpk past the angle the car's motion
-			// already asks ((VY + a·R)/VX), so full lock on a keyboard is the
-			// most the fronts can give, not a slide past it. It never steers
-			// against the driver.
-			c := (st.VY + float64(cgFront*st.R)) / st.VX
-			if target > 0 {
-				target = min(target, max(c+p.AlphaF, 0))
-			} else {
-				target = max(target, min(c-p.AlphaF, 0))
-			}
+	}
+	if st.VX > slipVX {
+		// Steering assist (both handlings): the wheel turns no further than
+		// the front tyres' peak slip, αpk past the angle the car's motion
+		// already asks ((VY + a·R)/VX), so full lock on a keyboard is the
+		// most the fronts can give, not a slide past it. It never steers
+		// against the driver.
+		alpha := p.AlphaF
+		if !p.Assists {
+			// Sim: a margin below the peak, or the rear lets go before the front does.
+			alpha = float64(p.AlphaF * simAssistSlip)
+		}
+		c := (st.VY + float64(cgFront*st.R)) / st.VX
+		if target > 0 {
+			target = min(target, max(c+alpha, 0))
+		} else {
+			target = max(target, min(c-alpha, 0))
 		}
 	}
 	step := float64(p.SteerRate * DT)

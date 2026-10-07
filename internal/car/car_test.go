@@ -284,10 +284,12 @@ func TestDiffTradesTractionForCornering(t *testing.T) {
 	if lo, hi := accel(1), accel(10); hi > lo {
 		t.Fatalf("20→40 m/s: diff 1 %.3f s, diff 10 %.3f s", lo, hi)
 	}
+	// The steering cap keeps the fronts at their peak, so the diff shows only at the rear's
+	// limit: at 30 m/s and throttle 0.6 a locked diff holds less corner than an open one.
 	held := func(diff int) float64 {
 		best := 0.0
 		for i := 1; i <= 20; i++ {
-			if ay, _, ok := cornerThr(Sim, with(noTC(), Diff, diff), Damage{}, float64(i)*0.05, 40, 0.6); ok {
+			if ay, _, ok := cornerThr(Sim, with(noTC(), Diff, diff), Damage{}, float64(i)*0.05, 30, 0.6); ok {
 				best = max(best, ay)
 			}
 		}
@@ -891,6 +893,28 @@ func TestArcadeKeyboardTapsStayPlanted(t *testing.T) {
 			Step(&st, &p, k.input(left, !(sec > 1 && sec < 1.5)), asphalt)
 			if st.R < -0.15 || math.Abs(st.VY)/max(st.VX, 1) > 0.12 {
 				t.Fatalf("%.0f m/s, %.2f s: R %.3f VY %.2f VX %.1f", v, sec, st.R, st.VY, st.VX)
+			}
+		}
+	}
+}
+
+// Full keyboard lock (Steer 1) gives at least 95 % of the best settled yaw rate
+// over a steer sweep 0.05..1, in both handlings: the wheel never turns past
+// the front tyres' peak slip. (Sim without the assist: far below, the fronts
+// run ~3x past peak.)
+func TestFullLockYawNearBest(t *testing.T) {
+	for _, h := range []Handling{Arcade, Sim} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		for _, v := range []float64{30, 50, 70} {
+			best := 0.0
+			for i := 1; i <= 20; i++ {
+				st := settled(&p, v, float64(i)*0.05)
+				best = max(best, math.Abs(st.R))
+			}
+			full := math.Abs(settled(&p, v, 1).R)
+			t.Logf("%v %.0f m/s: full lock %.3f rad/s, best %.3f (%.0f %%)", h, v, full, best, full/best*100)
+			if full < 0.95*best {
+				t.Errorf("%v %.0f m/s: full lock yaw %.3f rad/s is %.0f %% of the best %.3f", h, v, full, full/best*100, best)
 			}
 		}
 	}

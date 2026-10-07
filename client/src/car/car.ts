@@ -144,6 +144,7 @@ const limitRPM = 13500.0;
 const taperRPM = 13300.0;
 const clRearBase = 1.5;
 const simAlphaR = 0.11;
+const simAssistSlip = 0.6;
 const arcAlphaR = 0.15;
 const brakeMax = 30e3;
 const rollRes = 120.0;
@@ -289,16 +290,16 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     }
   }
 
-  // Steering: rate-limited toward the (Arcade: speed-scaled) target.
+  // Steering: rate-limited toward the target (Arcade: speed-scaled; both: peak-slip capped).
   let target = inp.steer * steerLock;
-  if (p.assists) {
-    target = target / (1 + Math.max(st.vx, 0) / arcadeVX);
-    if (st.vx > slipVX) {
-      // Arcade steering assist: no further than the front tyres' peak slip past the angle the car's motion already asks.
-      const c = (st.vy + cgFront * st.r) / st.vx;
-      if (target > 0) target = Math.min(target, Math.max(c + p.alphaF, 0));
-      else target = Math.max(target, Math.min(c - p.alphaF, 0));
-    }
+  if (p.assists) target = target / (1 + Math.max(st.vx, 0) / arcadeVX);
+  if (st.vx > slipVX) {
+    // Steering assist (both handlings): no further than the front tyres' peak slip past the angle the car's motion already asks.
+    // Sim keeps a margin below the peak, or the rear lets go before the front does.
+    const alpha = p.assists ? p.alphaF : p.alphaF * simAssistSlip;
+    const c = (st.vy + cgFront * st.r) / st.vx;
+    if (target > 0) target = Math.min(target, Math.max(c + alpha, 0));
+    else target = Math.max(target, Math.min(c - alpha, 0));
   }
   const stp = p.steerRate * DT;
   st.delta += Math.min(Math.max(target - st.delta, -stp), stp);
