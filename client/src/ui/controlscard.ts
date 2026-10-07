@@ -4,7 +4,7 @@
 // and coasts (app.ts blocks the controls); Escape closes it.
 import { fill, h } from "roomkit/ui/dom";
 import { t } from "../i18n/index.ts";
-import { keyRows, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";
+import { keyRows, keysLabel, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";
 
 export type CardOpts = {
   /** After it closed (the first-race card: remember it was seen). */
@@ -22,6 +22,7 @@ function rows(list: readonly KeyRow[]): HTMLElement {
 export class ControlsCard {
   readonly el = h("div", { class: "controls-card", role: "dialog", "aria-labelledby": "controls-title", hidden: true });
   private readonly opts: CardOpts;
+  private back: HTMLElement | null = null; // focus to restore on close (opened with focus)
   private readonly onKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
@@ -56,9 +57,13 @@ export class ControlsCard {
       h("div", { class: "card-cols" },
         h("section", {}, h("h3", {}, t("card.keyboard")), rows(keyRows(b))),
         h("section", {}, h("h3", {}, t("card.gamepad")), rows(padRows()))),
-      h("p", { class: "muted hint" }, t("card.again")),
+      h("p", { class: "muted hint" }, t("card.again", { keys: b.help.length ? `${keysLabel(b.help)} / ?` : "?" })),
       h("div", { class: "actions" }, change, manual, ok)));
-    if (!this.isOpen()) window.addEventListener("keydown", this.onKey, true);
+    if (!this.isOpen()) {
+      window.addEventListener("keydown", this.onKey, true);
+      const active = document.activeElement;
+      this.back = focus && active instanceof HTMLElement ? active : null;
+    }
     this.el.hidden = false;
     if (focus) ok.focus();
   }
@@ -68,15 +73,19 @@ export class ControlsCard {
     else this.open(b);
   }
 
+  /** Closes, gives the focus back to what opened it with focus (the home page's Controls button). */
   close(): void {
     if (!this.isOpen()) return;
+    const back = this.back;
     this.hide();
+    if (back?.isConnected) back.focus();
     this.opts.closed?.();
   }
 
-  /** Closes without the closed() callback (the session ends). */
+  /** Closes without the closed() callback or the focus (the session ends, another page opens). */
   hide(): void {
     this.el.hidden = true;
+    this.back = null;
     window.removeEventListener("keydown", this.onKey, true);
   }
 }

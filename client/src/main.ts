@@ -51,11 +51,18 @@ function route(first: HTMLCanvasElement, ui: HTMLElement, banner: Banner): void 
     manual: () => book.open(),
     controls: () => card.open(loadSettings().keys, true),
     garage: () => {
+      away();
       fill(ui, page("garage-page", t("garage.title"), home, garagePanel(home)));
       focusFirst(ui);
     },
-    board: () => showLeaderboard(ui, home),
-    settings: () => showSettings(ui, home),
+    board: () => {
+      away();
+      showLeaderboard(ui, home);
+    },
+    settings: () => {
+      away();
+      showSettings(ui, home);
+    },
   };
   const m = /^\/r\/([^/]{1,16})\/?$/.exec(location.pathname);
   const code = m ? normalizeCode(m[1]) : "";

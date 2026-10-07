@@ -40,7 +40,7 @@ export const EN: Area<typeof TR> = {
   "card.controls": "Controls",
   "card.keyboard": "Keyboard",
   "card.gamepad": "Gamepad",
-  "card.again": "In a race, F1 or ? opens this card again. Change the keys in Settings.",
+  "card.again": "In a race, {keys} opens this card again and Esc closes it. Change the keys in Settings.",
   "card.gotIt": "Got it",
   "card.change": "Change keys",
 

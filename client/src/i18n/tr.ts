@@ -37,7 +37,7 @@ export const TR = {
   "card.controls": "Kontroller",
   "card.keyboard": "Klavye",
   "card.gamepad": "Gamepad",
-  "card.again": "Yarışta F1 ya da ? bu kartı yeniden açar. Tuşları Ayarlar'dan değiştirebilirsin.",
+  "card.again": "Yarışta {keys} bu kartı yeniden açar, Esc kapatır. Tuşları Ayarlar'dan değiştirebilirsin.",
   "card.gotIt": "Anladım",
   "card.change": "Tuşları değiştir",
 
