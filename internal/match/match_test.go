@@ -112,7 +112,7 @@ func TestStartRules(t *testing.T) {
 	}
 	out.take()
 	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
 	ns = of[netproto.NoticeMsg](out.take())
 	if len(ns) != 2 || ns[0].Code != protocol.CodeNotGrid || ns[1].Code != protocol.CodeNotGrid {
 		t.Fatalf("%+v", ns)
@@ -124,12 +124,12 @@ func TestReadyBroadcastsGrid(t *testing.T) {
 	a := join(t, m, out, "Ace")
 	m.Step(nil, out)
 	out.take()
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{1, 2, 60, 3, 4, 5}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{1, 2, 60, 3, 4, 5, 0}}, out)
 	gs := of[protocol.GridMsg](out.take())
 	if len(gs) != 1 || !gs[0].Cars[0].Ready || gs[0].Cars[1].Ready {
 		t.Fatalf("%+v", gs)
 	}
-	if got := m.r.Cars()[0].Driver.Setup; got != (car.Setup{1, 2, 60, 3, 4, 5}) {
+	if got := m.r.Cars()[0].Driver.Setup; got != (car.Setup{1, 2, 60, 3, 4, 5, 0}) {
 		t.Fatalf("setup %v", got)
 	}
 	m.Step(nil, out) // nothing changed: no second grid
@@ -148,7 +148,7 @@ func run(m *Match, out *fakeOut, n int, pred func() bool) {
 func TestFullFlow(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Ace")
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
 	m.Step(nil, out) // everyone ready: the grid ends
 	if m.r.Phase() != race.Lights {
 		t.Fatalf("phase %v", m.r.Phase())
@@ -284,7 +284,7 @@ func TestChatScopeEveryone(t *testing.T) {
 func TestResetBroadcast(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Idle")
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
 	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
 	st := &m.r.Cars()[a-1].St
 	st.HX, st.HZ, st.H = -st.HX, -st.HZ, st.H+math.Pi
@@ -490,7 +490,7 @@ func TestFullContactHitSendsDamage(t *testing.T) {
 func TestWelcomeCarriesSetupAndDamage(t *testing.T) {
 	m, out := New(race.Settings{Handling: car.Arcade, Contact: race.Full, Laps: 3, Seed: 7}, nil), &fakeOut{}
 	a := join(t, m, out, "Ace")
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{3, 8, 62, 2, 7, 4}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{3, 8, 62, 2, 7, 4, 1}}, out)
 	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
 	c := crash(m, a)
 	run(m, out, 120, func() bool { return c.St.Dmg != (car.Damage{}) })
@@ -501,7 +501,7 @@ func TestWelcomeCarriesSetupAndDamage(t *testing.T) {
 	if b != a || len(ws) != 1 {
 		t.Fatalf("seat %d (was %d), welcomes %d", b, a, len(ws))
 	}
-	if ws[0].Setup != (protocol.SetupInts{3, 8, 62, 2, 7, 4}) || ws[0].Dmg != protocol.EncodeDamage(c.St.Dmg) || ws[0].Dmg == (protocol.DamageInts{}) {
+	if ws[0].Setup != (protocol.SetupInts{3, 8, 62, 2, 7, 4, 1}) || ws[0].Dmg != protocol.EncodeDamage(c.St.Dmg) || ws[0].Dmg == (protocol.DamageInts{}) {
 		t.Fatalf("welcome %+v, car damage %+v", ws[0], c.St.Dmg)
 	}
 }

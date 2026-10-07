@@ -11,7 +11,7 @@ import (
 const inputHz = 60
 
 // defaultSetup is the garage's default set-up, sent on the welcome.
-var defaultSetup = protocol.SetupInts{6, 6, 58, 3, 5, 5}
+var defaultSetup = protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}
 
 // driver is the load test's Pitlane player: hello, the create message from
 // the flags, ready on the welcome and a weaving steer at full throttle.

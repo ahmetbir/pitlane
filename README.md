@@ -2,7 +2,7 @@
 
 A browser multiplayer formula racing game: up to 10 cars (empty places are bots) on a
 fictional circuit, Arcade or Sim handling and ghost, soft or full-damage contact chosen per
-room, and a car setup (wings, brake bias, gearing, differential, suspension balance) the physics
+room, and a car setup (wings, brake bias, gearing, differential, suspension balance, traction control) the physics
 responds to. Built on [roomkit](https://github.com/ahmetbir/roomkit): a Go server is the only
 authority (60 Hz simulation, 30 Hz snapshots); the TypeScript + Three.js client predicts your car
 and is embedded into the Go binary.

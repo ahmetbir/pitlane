@@ -78,7 +78,9 @@ func makeCarCase(r *rng, i int) carCase {
 	if i%2 == 1 {
 		h = car.Sim
 	}
-	s := car.Setup{r.rangeI(1, 11), r.rangeI(1, 11), r.rangeI(50, 70), r.rangeI(1, 5), r.rangeI(1, 10), r.rangeI(1, 9)}
+	// TC cycles 0..3 over pairs of cases without drawing from r, so the TC 0
+	// cases replay exactly as before traction control levels existed.
+	s := car.Setup{r.rangeI(1, 11), r.rangeI(1, 11), r.rangeI(50, 70), r.rangeI(1, 5), r.rangeI(1, 10), r.rangeI(1, 9), i / 2 % 4}
 	var d car.Damage
 	switch {
 	case i >= 38: // front wing lost

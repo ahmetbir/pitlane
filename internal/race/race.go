@@ -159,7 +159,7 @@ func (r *Race) RaceStart() int { return r.raceStart }
 func (r *Race) Cars() []*Car { return r.cars[:] }
 
 func (r *Race) makeBot(c *Car) {
-	c.Driver = Driver{Name: fmt.Sprintf("Bot %d", c.ID), Setup: car.DefaultSetup()}
+	c.Driver = Driver{Name: fmt.Sprintf("Bot %d", c.ID), Setup: bot.Setup()}
 	c.P = car.NewParams(r.set.Handling, c.Driver.Setup, car.Damage{})
 	seed := rng{s: r.set.Seed ^ uint64(c.ID)}
 	c.brain = bot.NewBrain(seed.next(), r.prof)

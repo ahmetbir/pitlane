@@ -1,10 +1,10 @@
-// Wire messages, version 1; mirrors internal/protocol (the Go JSON tags and
+// Wire messages, version 2; mirrors internal/protocol (the Go JSON tags and
 // documented examples are authoritative). Decoders check shapes only: the
 // server is trusted, a malformed message is dropped instead of crashing a frame.
 
 import { cleanInput, type Damage, type Input, type Setup } from "../car/car.ts";
 
-export const VERSION = 1;
+export const VERSION = 2;
 
 export type HandlingName = "arcade" | "sim";
 export type ContactName = "ghost" | "soft" | "full";
@@ -19,7 +19,7 @@ export type Join = { t: "join"; code: string };
 export type Quick = { t: "quick" };
 /** One tick of input in wire units: th 0..100, br 0..100, st −127..127 (left +); seq starts at 1. */
 export type In = { t: "in"; seq: number } & WireInput;
-/** Garage setup [fw, rw, bb, gear, diff, susp]; grid phase only. */
+/** Garage setup [fw, rw, bb, gear, diff, susp, tc]; grid phase only. */
 export type Ready = { t: "ready"; setup: Setup };
 /** Creator only, grid phase only. */
 export type Start = { t: "start" };
@@ -123,7 +123,7 @@ const bool: Check = (v) => typeof v === "boolean";
 const oneOf = (...xs: string[]): Check => (v) => xs.includes(v as string);
 const row: Check = (v) => Array.isArray(v) && v.length === 11 && v.every(int);
 const listOf = (c: Check): Check => (v) => Array.isArray(v) && v.every(c);
-const setup: Check = (v) => Array.isArray(v) && v.length === 6 && v.every(int);
+const setup: Check = (v) => Array.isArray(v) && v.length === 7 && v.every(int);
 const shape = (req: Record<string, Check>, opt: Record<string, Check> = {}): Check => (v) => {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const o = v as Obj;

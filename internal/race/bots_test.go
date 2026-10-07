@@ -22,7 +22,7 @@ func TestBotTurnsAround(t *testing.T) {
 				g := tr.Segs[i]
 				x, z := tr.Point(s0, lat0)
 				st := car.State{X: x, Z: z, HX: -g.TX, HZ: -g.TZ, Gear: 1} // facing straight back
-				p := car.NewParams(h, car.DefaultSetup(), car.Damage{})
+				p := car.NewParams(h, bot.Setup(), car.Damage{})
 				b := bot.NewBrain(0, prof)
 				b.Skill = 0.9
 				seg, s := i, s0

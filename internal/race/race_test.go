@@ -190,7 +190,7 @@ func TestHoldVariesBySeed(t *testing.T) {
 func TestResultsResetsGrid(t *testing.T) {
 	r := newRace(1)
 	a, _ := r.Seat("a", "pil")
-	r.Ready(a, car.Setup{1, 2, 50, 2, 3, 4})
+	r.Ready(a, car.Setup{1, 2, 50, 2, 3, 4, 1})
 	setup := r.Cars()[0].Driver.Setup
 	for r.Phase() != Racing {
 		r.Step(nil)
@@ -219,7 +219,7 @@ func TestResultsResetsGrid(t *testing.T) {
 func TestMidRaceSeatKeepsSetup(t *testing.T) {
 	r := newRace(1)
 	a, _ := r.Seat("a", "")
-	custom := car.Setup{1, 2, 50, 2, 3, 4}
+	custom := car.Setup{1, 2, 50, 2, 3, 4, 1}
 	r.Ready(a, custom)
 	custom = r.Cars()[0].Driver.Setup
 	for r.Phase() != Racing {
@@ -304,9 +304,9 @@ func TestMidRaceJoinerTakesLastPlaced(t *testing.T) {
 func TestReadySetupClamped(t *testing.T) {
 	r := newRace(1)
 	id, _ := r.Seat("a", "")
-	r.Ready(id, car.Setup{99, -5, 999, 99, 99, 99})
+	r.Ready(id, car.Setup{99, -5, 999, 99, 99, 99, 99})
 	c := r.Cars()[0]
-	if !c.Driver.Ready || c.Driver.Setup != c.Driver.Setup.Clamp() || c.Driver.Setup == (car.Setup{99, -5, 999, 99, 99, 99}) {
+	if !c.Driver.Ready || c.Driver.Setup != c.Driver.Setup.Clamp() || c.Driver.Setup == (car.Setup{99, -5, 999, 99, 99, 99, 99}) {
 		t.Fatalf("setup %v ready %v", c.Driver.Setup, c.Driver.Ready)
 	}
 	for r.Phase() != Lights && r.Tick() < 100 {

@@ -56,7 +56,7 @@ func TestQuickSettings(t *testing.T) {
 
 func TestKit(t *testing.T) {
 	k := Kit{}
-	if k.Version() != 1 {
+	if k.Version() != 2 {
 		t.Fatal("version")
 	}
 	for _, c := range []struct {

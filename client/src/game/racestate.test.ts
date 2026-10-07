@@ -66,7 +66,7 @@ test("wrong way: driving against the track direction", () => {
 test("a reconnect into the same car keeps last, best and position; a new car starts over", () => {
   const welcome = (car: number): ServerMsg => ({
     t: "welcome", you: 1, code: "K3FQ", car, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: false,
-    setup: [6, 6, 58, 3, 5, 5], dmg: { fw: 0, rw: 0, su: 0 },
+    setup: [6, 6, 58, 3, 5, 5, 2], dmg: { fw: 0, rw: 0, su: 0 },
   });
   let own = 2;
   const rs = new RaceState(tr, 3, () => own);

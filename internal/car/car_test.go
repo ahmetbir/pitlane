@@ -11,6 +11,11 @@ func with(s Setup, i, v int) Setup { s[i] = v; return s }
 
 func rest() State { return State{HX: 1, Gear: 1} }
 
+// noTC is the default setup with traction control off: the bare chassis.
+// (With TC on, a car at the rear's grip limit is refused the power to hold
+// speed, which is what TC is for.)
+func noTC() Setup { return with(DefaultSetup(), TC, 0) }
+
 func run(h Handling, s Setup, in Input, ticks int) State {
 	p := NewParams(h, s, Damage{})
 	st := rest()
@@ -146,8 +151,8 @@ func TestBrakingStopsAndBiasMatters(t *testing.T) {
 }
 
 func TestSteadyCornerUndersteerBySuspension(t *testing.T) {
-	_, soft, ok1 := corner(Sim, with(DefaultSetup(), SuspBalance, 1), Damage{}, 0.2)
-	_, stiff, ok9 := corner(Sim, with(DefaultSetup(), SuspBalance, 9), Damage{}, 0.2)
+	_, soft, ok1 := corner(Sim, with(noTC(), SuspBalance, 1), Damage{}, 0.2)
+	_, stiff, ok9 := corner(Sim, with(noTC(), SuspBalance, 9), Damage{}, 0.2)
 	if !ok1 || !ok9 || !(stiff > soft) {
 		t.Fatalf("radius susp 1 %.2f m (steady %v), susp 9 %.2f m (steady %v)", soft, ok1, stiff, ok9)
 	}
@@ -156,7 +161,7 @@ func TestSteadyCornerUndersteerBySuspension(t *testing.T) {
 func TestSimHoldsSteadyCorner(t *testing.T) {
 	for _, steer := range []float64{0.05, 0.1, 0.15, 0.2} {
 		for _, sb := range []int{1, 5, 9} {
-			if _, r, ok := corner(Sim, with(DefaultSetup(), SuspBalance, sb), Damage{}, steer); !ok || r <= 0 {
+			if _, r, ok := corner(Sim, with(noTC(), SuspBalance, sb), Damage{}, steer); !ok || r <= 0 {
 				t.Fatalf("steer %.2f susp %d: not steady (radius %.1f)", steer, sb, r)
 			}
 		}
@@ -225,7 +230,7 @@ func TestSpunCarBrakesSideways(t *testing.T) {
 
 func TestSimSpinThenBrakeStops(t *testing.T) {
 	for _, h := range []Handling{Sim, Arcade} {
-		p := NewParams(h, DefaultSetup(), Damage{})
+		p := NewParams(h, noTC(), Damage{}) // Sim spins with TC off
 		st := rest()
 		st.VX = 40
 		for range 90 {
@@ -262,9 +267,10 @@ func TestRevLimiterNoJitter(t *testing.T) {
 	}
 }
 
+// With TC off: traction control caps the drive below the diff's traction gain.
 func TestDiffTradesTractionForCornering(t *testing.T) {
 	accel := func(diff int) float64 {
-		p := NewParams(Sim, with(DefaultSetup(), Diff, diff), Damage{})
+		p := NewParams(Sim, with(noTC(), Diff, diff), Damage{})
 		st := rest()
 		st.VX = 20
 		for i := range 60 * 20 {
@@ -281,7 +287,7 @@ func TestDiffTradesTractionForCornering(t *testing.T) {
 	held := func(diff int) float64 {
 		best := 0.0
 		for i := 1; i <= 20; i++ {
-			if ay, _, ok := cornerThr(Sim, with(DefaultSetup(), Diff, diff), Damage{}, float64(i)*0.05, 40, 0.6); ok {
+			if ay, _, ok := cornerThr(Sim, with(noTC(), Diff, diff), Damage{}, float64(i)*0.05, 40, 0.6); ok {
 				best = max(best, ay)
 			}
 		}
@@ -449,12 +455,12 @@ func finite(st State) bool {
 }
 
 func TestNoNaNUnderAbuse(t *testing.T) {
-	lo := Setup{1, 1, 50, 1, 1, 1}
-	hi := Setup{11, 11, 70, 5, 10, 9}
+	lo := Setup{1, 1, 50, 1, 1, 1, 0}
+	hi := Setup{11, 11, 70, 5, 10, 9, 3}
 	envs := []Env{{1, 0}, {0.9, 0}, {0.55, 0.9}}
 	r := rng(7)
 	for _, h := range []Handling{Arcade, Sim} {
-		for mask := range 1 << 6 {
+		for mask := range 1 << 7 {
 			var s Setup
 			for i := range s {
 				s[i] = lo[i]
@@ -492,10 +498,13 @@ func TestInputClean(t *testing.T) {
 }
 
 func TestSetupClamp(t *testing.T) {
-	if got := (Setup{0, 99, -5, 9, 0, 100}).Clamp(); got != (Setup{1, 11, 50, 5, 1, 9}) {
+	if got := (Setup{0, 99, -5, 9, 0, 100, -1}).Clamp(); got != (Setup{1, 11, 50, 5, 1, 9, 0}) {
 		t.Fatalf("clamp: %v", got)
 	}
-	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5}) || DefaultSetup().Clamp() != DefaultSetup() {
+	if got := (Setup{6, 6, 58, 3, 5, 5, 4}).Clamp(); got[TC] != 3 {
+		t.Fatalf("clamp TC: %v", got)
+	}
+	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5, 2}) || DefaultSetup().Clamp() != DefaultSetup() {
 		t.Fatalf("default: %v", DefaultSetup())
 	}
 }
@@ -528,37 +537,103 @@ func TestStepIsDeterministic(t *testing.T) {
 	}
 }
 
-// A keyboard holds full throttle and slews the steer to full lock at 3/s. In
-// Arcade that must never spin the car, whatever the differential: the
-// traction control leaves rear grip and the diff acts on real traction.
+// keyboardSlip: a keyboard holds full throttle and slews the steer to full
+// lock at 3/s for hold seconds (back at 5/s), from v0 after 2 s at half
+// throttle. It returns the largest side-slip angle (degrees) over 6 s, and
+// whether VX went negative (a spin).
+func keyboardSlip(h Handling, su Setup, v0, hold float64) (slip float64, spun bool) {
+	p := NewParams(h, su, Damage{})
+	st := State{HX: 1, VX: v0, Gear: 1}
+	for i := 0; i < 120; i++ {
+		Step(&st, &p, Input{Throttle: 0.5}, Env{Mu: 1})
+	}
+	steer := 0.0
+	for i := 0; i < 360; i++ {
+		target := 0.0
+		if float64(i)*DT < hold {
+			target = 1
+		}
+		rate := 3.0
+		if target == 0 {
+			rate = 5
+		}
+		steer += math.Max(-rate*DT, math.Min(rate*DT, target-steer))
+		Step(&st, &p, Input{Throttle: 1, Steer: math.Round(steer*127) / 127}, Env{Mu: 1})
+		slip = max(slip, math.Abs(math.Atan2(st.VY, math.Max(st.VX, 0.1)))*180/math.Pi)
+		spun = spun || st.VX < 0
+	}
+	return slip, spun
+}
+
+// In Arcade a keyboard's full throttle must never spin the car, whatever the
+// differential: the traction control leaves rear grip and the diff acts on
+// real traction.
 func TestArcadeKeyboardFullThrottleTurnsWithoutSpinning(t *testing.T) {
 	for _, diff := range []int{1, 5, 10} {
 		for _, v0 := range []float64{25, 40, 60} {
 			for _, hold := range []float64{0.2, 1.5} {
-				su := DefaultSetup()
-				su[Diff] = diff
-				p := NewParams(Arcade, su, Damage{})
-				st := State{HX: 1, VX: v0, Gear: 1}
-				for i := 0; i < 120; i++ {
-					Step(&st, &p, Input{Throttle: 0.5}, Env{Mu: 1})
+				if slip, spun := keyboardSlip(Arcade, with(DefaultSetup(), Diff, diff), v0, hold); slip > 20 || spun {
+					t.Fatalf("diff %d v0 %.0f hold %.1fs: slip %.1f° (spin)", diff, v0, hold, slip)
 				}
-				steer := 0.0
-				for i := 0; i < 360; i++ {
-					target := 0.0
-					if float64(i)*DT < hold {
-						target = 1
+			}
+		}
+	}
+}
+
+// Sim traction control level 3 keeps a keyboard's full throttle from
+// spinning the car at 25/40/60 m/s; with TC off the same driving spins it.
+func TestSimTCLevels(t *testing.T) {
+	worst := [4]float64{}
+	for tc := 0; tc <= 3; tc++ {
+		for _, diff := range []int{1, 5, 10} {
+			for _, v0 := range []float64{25, 40, 60} {
+				for _, hold := range []float64{0.2, 1.5} {
+					slip, spun := keyboardSlip(Sim, with(with(DefaultSetup(), Diff, diff), TC, tc), v0, hold)
+					if spun {
+						slip = 180
 					}
-					rate := 3.0
-					if target == 0 {
-						rate = 5
-					}
-					steer += math.Max(-rate*DT, math.Min(rate*DT, target-steer))
-					Step(&st, &p, Input{Throttle: 1, Steer: math.Round(steer*127) / 127}, Env{Mu: 1})
-					if slip := math.Abs(math.Atan2(st.VY, math.Max(st.VX, 0.1))) * 180 / math.Pi; slip > 20 || st.VX < 0 {
-						t.Fatalf("diff %d v0 %.0f hold %.1fs: slip %.1f° at tick %d (spin)", diff, v0, hold, slip, i)
+					worst[tc] = max(worst[tc], slip)
+					t.Logf("TC %d diff %2d v0 %2.0f hold %.1f: max slip %5.1f° spun %v", tc, diff, v0, hold, slip, spun)
+					if tc == 3 && (slip > 20 || spun) {
+						t.Errorf("TC 3 diff %d v0 %.0f hold %.1fs: slip %.1f° (spin)", diff, v0, hold, slip)
 					}
 				}
 			}
 		}
 	}
+	if !(worst[0] > 20) {
+		t.Errorf("TC off never spins (worst slip %.1f°): the levels do not differ", worst[0])
+	}
+	t.Logf("worst slip by level 0..3: %.1f°", worst)
+	// The price: on a straight, each level pulls away from rest a little slower.
+	prev := 0.0
+	for tc := 0; tc <= 3; tc++ {
+		tm := zeroTo(Sim, with(DefaultSetup(), TC, tc), 100/3.6, false)
+		t.Logf("TC %d: 0–100 km/h %.3f s", tc, tm)
+		if !(tm >= prev) {
+			t.Errorf("TC %d: 0–100 km/h %.3f s, quicker than the level below (%.3f s)", tc, tm, prev)
+		}
+		prev = tm
+	}
+}
+
+// zeroTo returns the time from rest to speed v at full throttle; with launch,
+// the brake is held with full throttle for 1.5 s first (not counted).
+func zeroTo(h Handling, su Setup, v float64, launch bool) float64 {
+	p := NewParams(h, su, Damage{})
+	st := rest()
+	if launch {
+		for range 90 {
+			Step(&st, &p, Input{Throttle: 1, Brake: 1}, asphalt)
+		}
+	}
+	prev := st.Speed()
+	for i := range 60 * 20 {
+		Step(&st, &p, Input{Throttle: 1}, asphalt)
+		if s := st.Speed(); s >= v {
+			return (float64(i) + (v-prev)/(s-prev)) * DT
+		}
+		prev = st.Speed()
+	}
+	return math.Inf(1)
 }

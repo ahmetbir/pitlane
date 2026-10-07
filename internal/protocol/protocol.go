@@ -1,4 +1,4 @@
-// Package protocol defines Pitlane's JSON wire messages (version 1): flat
+// Package protocol defines Pitlane's JSON wire messages (version 2): flat
 // objects with a "t" type, the roomkit envelope plus game fields.
 package protocol
 
@@ -8,7 +8,7 @@ import "github.com/ahmetbir/roomkit/netproto"
 // github.com/ahmetbir/roomkit/netproto.
 
 // Version is the wire protocol version a hello must carry.
-const Version = 1
+const Version = 2
 
 // MaxClientMsg is the largest client message DecodeClient accepts.
 const MaxClientMsg = 1024

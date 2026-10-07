@@ -184,7 +184,7 @@ func play(h car.Handling, contact race.Contact) []byte {
 		ids = append(ids, id)
 		m.Welcome(id, "GOLD", "", out)
 	}
-	setups := []protocol.SetupInts{{6, 6, 58, 3, 5, 5}, {3, 8, 62, 2, 7, 4}}
+	setups := []protocol.SetupInts{{6, 6, 58, 3, 5, 5, 2}, {3, 8, 62, 2, 7, 4, 1}}
 	for i, id := range ids {
 		m.Handle(id, protocol.ClientMsg{T: protocol.TReady, Setup: &setups[i]}, out)
 	}

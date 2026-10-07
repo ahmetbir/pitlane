@@ -35,8 +35,8 @@ func (h Handling) String() string {
 	return "arcade"
 }
 
-// Setup is the garage setup, indexed by FrontWing … SuspBalance.
-type Setup [6]int
+// Setup is the garage setup, indexed by FrontWing … TC.
+type Setup [7]int
 
 const (
 	FrontWing = iota
@@ -45,11 +45,16 @@ const (
 	Gearing
 	Diff
 	SuspBalance
+	TC // traction control level: 0 off, 1..3 (Arcade always acts as 3)
 )
 
-var setupMin, setupMax = Setup{1, 1, 50, 1, 1, 1}, Setup{11, 11, 70, 5, 10, 9}
+var setupMin, setupMax = Setup{1, 1, 50, 1, 1, 1, 0}, Setup{11, 11, 70, 5, 10, 9, 3}
 
-func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5} }
+func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 2} }
+
+// tcShares[level] is the share of the rear capacity the drive may ask for; 0 is
+// no limit (traction control off).
+var tcShares = [4]float64{0, 1.00, 0.90, tcShare}
 
 func (s Setup) Clamp() Setup {
 	for i := range s {
@@ -145,7 +150,7 @@ const (
 	yawCapK    = 1.15  // Arcade yaw cap margin over available lateral grip
 	arcadeVX   = 60.0  // Arcade steer scaling speed
 	tcCut      = 0.5   // Arcade TC throttle factor
-	tcShare    = 0.8   // Arcade TC: drive ≤ this share of the rear capacity
+	tcShare    = 0.8   // TC level 3 (and Arcade): drive ≤ this share of the rear capacity
 	absCut     = 0.6   // Arcade ABS brake factor
 	tcSlip     = 0.9   // TC engages above this fraction of αpk (rear)
 	diffOn     = 0.3   // diff lock acts above this mapped throttle (pedal²)
@@ -191,7 +196,8 @@ type Params struct {
 	Mu             float64 // handling grip
 	AlphaF, AlphaR float64 // peak slip (rad)
 	SteerRate      float64 // rad/s
-	Assists        bool    // Arcade: steer scaling, TC, ABS, yaw cap
+	Assists        bool    // Arcade: steer scaling, reactive TC, ABS, yaw cap
+	TCShare        float64 // predictive TC share, 0 = off (Sim: of the rear friction circle left; Arcade: of the rear capacity)
 
 	AeroF, AeroR float64 // downforce per v² (N·s²/m²)
 	DragK        float64 // aero drag per v² (N·s²/m²)
@@ -211,9 +217,9 @@ type Params struct {
 func NewParams(h Handling, s Setup, d Damage) Params {
 	s = s.Clamp()
 	d = Damage{clean(d.FrontWing, 0, 1), clean(d.RearWing, 0, 1), clean(d.Susp, 0, 1)}
-	p := Params{Mu: 1.00, AlphaF: 0.10, AlphaR: simAlphaR, SteerRate: 2.5}
+	p := Params{Mu: 1.00, AlphaF: 0.10, AlphaR: simAlphaR, SteerRate: 2.5, TCShare: tcShares[s[TC]]}
 	if h == Arcade {
-		p = Params{Mu: 1.25, AlphaF: 0.14, AlphaR: arcAlphaR, SteerRate: 4.0, Assists: true}
+		p = Params{Mu: 1.25, AlphaF: 0.14, AlphaR: arcAlphaR, SteerRate: 4.0, Assists: true, TCShare: tcShare}
 	}
 	// Every product feeding a sum is materialised; see the package comment.
 	fw, rw := float64(s[FrontWing]-1), float64(s[RearWing]-1)

@@ -79,6 +79,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 	kR := max(1-float64(float64(latLoss*(1-p.LatF))*lat)/fzR, 0)
 	capF, capR = float64(capF*kF), float64(capR*kR)
 	fyF, fyR = float64(fyF*kF), float64(fyR*kR)
+	if !p.Assists && p.TCShare > 0 {
+		// Sim traction control: the drive never asks more than TCShare of
+		// what the rear's friction circle leaves beside the cornering force
+		// (level 1 = no excess wheelspin), so the throttle cannot take the
+		// rear's lateral grip. It acts before the diff, which then locks on
+		// the drive that is really asked.
+		left := math.Sqrt(max(float64(capR*capR)-float64(fyR*fyR), 0))
+		drive = min(drive, float64(p.TCShare*left))
+	}
 	capX := capR // rear longitudinal capacity
 	if eff := min(float64(in.Throttle*in.Throttle), drive/max(capR, 1)); eff > diffOn {
 		// Diff lock acts on the smaller of the pedal demand and the share of

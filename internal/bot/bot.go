@@ -589,6 +589,14 @@ func (pr *Profile) brakeDecel(v, k float64) float64 {
 // Speed is the target speed (m/s) at seg i, before skill.
 func (pr *Profile) Speed(i int) float64 { return pr.v[i] }
 
+// Setup is the bots' car setup: the default with traction control at level 3
+// (Arcade acts as level 3 whatever the setting).
+func Setup() car.Setup {
+	s := car.DefaultSetup()
+	s[car.TC] = 3
+	return s
+}
+
 // NewProfile builds the speed profile of tr's racing line for handling h: the closed-form corner
 // speed, then a braking (backward) and an acceleration (forward) pass.
 func NewProfile(tr *track.Track, h car.Handling) *Profile {

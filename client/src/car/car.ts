@@ -25,8 +25,8 @@ export function handlingString(h: Handling): string {
   return h === Handling.Sim ? "sim" : "arcade";
 }
 
-/** Garage setup, indexed by FrontWing … SuspBalance. */
-export type Setup = [number, number, number, number, number, number];
+/** Garage setup, indexed by FrontWing … TC. */
+export type Setup = [number, number, number, number, number, number, number];
 
 export const FrontWing = 0;
 export const RearWing = 1;
@@ -34,13 +34,15 @@ export const BrakeBias = 2;
 export const Gearing = 3;
 export const Diff = 4;
 export const SuspBalance = 5;
+/** Traction control level: 0 off, 1..3 (Arcade always acts as 3). */
+export const TC = 6;
 
 /** Garage ranges per setup index (inclusive); read-only. */
-export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1];
-export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9];
+export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1, 0];
+export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9, 3];
 
 export function defaultSetup(): Setup {
-  return [6, 6, 58, 3, 5, 5];
+  return [6, 6, 58, 3, 5, 5, 2];
 }
 
 export function clampSetup(s: Setup): Setup {
@@ -149,6 +151,8 @@ const yawCapK = 1.15;
 const arcadeVX = 60.0;
 const tcCut = 0.5;
 const tcShare = 0.8;
+/** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */
+export const tcShares: readonly number[] = [0, 1.0, 0.9, tcShare];
 const absCut = 0.6;
 const tcSlip = 0.9;
 const diffOn = 0.3;
@@ -185,6 +189,7 @@ export interface Params {
   alphaR: number;
   steerRate: number;
   assists: boolean;
+  tcShare: number;
   aeroF: number;
   aeroR: number;
   dragK: number;
@@ -205,9 +210,9 @@ export interface Params {
 export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
   const s = clampSetup(setup);
   const d: Damage = { frontWing: clean(dmg.frontWing, 0, 1), rearWing: clean(dmg.rearWing, 0, 1), susp: clean(dmg.susp, 0, 1) };
-  let mu = 1.0, alphaF = 0.1, alphaR = simAlphaR, steerRate = 2.5, assists = false;
+  let mu = 1.0, alphaF = 0.1, alphaR = simAlphaR, steerRate = 2.5, assists = false, tc = tcShares[s[TC]];
   if (h === Handling.Arcade) {
-    mu = 1.25; alphaF = 0.14; alphaR = arcAlphaR; steerRate = 4.0; assists = true;
+    mu = 1.25; alphaF = 0.14; alphaR = arcAlphaR; steerRate = 4.0; assists = true; tc = tcShare;
   }
   const fw = s[FrontWing] - 1, rw = s[RearWing] - 1;
   let clF = 0.9 + 0.22 * fw * (1 - 0.7 * d.frontWing);
@@ -221,7 +226,7 @@ export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
     rpmPerMS[g] = drive[g] * rpmPerRad;
   }
   return {
-    mu, alphaF, alphaR, steerRate, assists,
+    mu, alphaF, alphaR, steerRate, assists, tcShare: tc,
     aeroF: aeroQ * clF,
     aeroR: aeroQ * clR,
     dragK: aeroQ * (cdBase + cdPerStep * (fw + rw)),
@@ -303,6 +308,12 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   capR = capR * kR;
   fyF = fyF * kF;
   fyR = fyR * kR;
+  if (!p.assists && p.tcShare > 0) {
+    // Sim traction control: drive ≤ tcShare of the rear friction circle left
+    // beside the cornering force; before the diff.
+    const left = Math.sqrt(Math.max(capR * capR - fyR * fyR, 0));
+    drive = Math.min(drive, p.tcShare * left);
+  }
   let capX = capR;
   const eff = Math.min(inp.throttle * inp.throttle, drive / Math.max(capR, 1));
   if (eff > diffOn) {

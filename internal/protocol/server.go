@@ -10,7 +10,7 @@ import (
 )
 
 // Pitlane's server messages. Examples are one JSON line each (the TS client
-// is written from these; field names are fixed by wire v1).
+// is written from these; field names are fixed by wire v2).
 
 // NewWelcome builds the welcome of a player; tok is set only when a pilot
 // token was just issued. setup and dmg are the seated car's current ones.
@@ -27,7 +27,7 @@ func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, 
 // beside the room settings and the car's current setup and damage (a
 // takeover or a reconnect may seat a car that already has both).
 //
-//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5],"dmg":{"fw":0,"rw":0,"su":0}}
+//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,2],"dmg":{"fw":0,"rw":0,"su":0}}
 //
 // tok appears only when a pilot token was just issued.
 type Welcome struct {
@@ -38,7 +38,7 @@ type Welcome struct {
 	Laps     int        `json:"laps"`
 	Track    string     `json:"track"`
 	Creator  bool       `json:"creator"` // may press start
-	Setup    SetupInts  `json:"setup"`   // the car's setup [fw, rw, bb, gear, diff, susp]
+	Setup    SetupInts  `json:"setup"`   // the car's setup [fw, rw, bb, gear, diff, susp, tc]
 	Dmg      DamageInts `json:"dmg"`     // the car's damage
 }
 

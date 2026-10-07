@@ -35,7 +35,7 @@ func soloLaps(h car.Handling, laps, maxTicks int) lapRun {
 	tr := track.Kiyi()
 	g := tr.Grid[0]
 	st := car.State{X: g.X, Z: g.Z, H: g.H, HX: math.Cos(g.H), HZ: math.Sin(g.H), Gear: 1}
-	p := car.NewParams(h, car.DefaultSetup(), car.Damage{})
+	p := car.NewParams(h, bot.Setup(), car.Damage{})
 	b := bot.NewBrain(0, bot.NewProfile(tr, h))
 	b.Skill = 0.98
 	seg, _, s := tr.Locate(st.X, st.Z, -1)
