@@ -1,6 +1,6 @@
 // The home page: name, quick race, join by code, open rooms, the create
-// dialog, and the ways to the garage, leaderboard and settings. Also the name
-// prompt of a /r/CODE link.
+// dialog, and the ways to the garage, leaderboard, settings, the driver's
+// manual and the controls card. Also the name prompt of a /r/CODE link.
 import { normalizeCode } from "roomkit/net/code";
 import { fill, h } from "roomkit/ui/dom";
 import { t } from "../i18n/index.ts";
@@ -19,6 +19,10 @@ export type HomeNav = {
   garage(): void;
   board(): void;
   settings(): void;
+  /** Opens the driver's manual over the page. */
+  manual(): void;
+  /** Opens the controls card over the page. */
+  controls(): void;
 };
 
 function nameField(value: string): HTMLInputElement {
@@ -83,6 +87,7 @@ export function showHome(root: HTMLElement, nav: HomeNav, draft?: string): void 
     h("header", { class: "brand" },
       h("div", {}, h("h1", {}, BRAND), h("p", { class: "muted tagline" }, t("app.tagline"))),
       h("nav", { class: "brand-tools" },
+        navButton(t("home.manual"), nav.manual), navButton(t("home.controls"), nav.controls),
         navButton(t("home.garage"), leave(nav.garage)), navButton(t("home.board"), leave(nav.board)),
         navButton(t("home.settings"), leave(nav.settings)), lang)),
     h("div", { class: "home-grid" },

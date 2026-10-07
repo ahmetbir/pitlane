@@ -35,6 +35,7 @@ export const EN: Area<typeof TR> = {
   "home.joinTitle": "Join by code",
   "home.joinPrompt": "Join the room",
   "home.manual": "Manual",
+  "home.controls": "Controls",
 
   "card.controls": "Controls",
   "card.keyboard": "Keyboard",

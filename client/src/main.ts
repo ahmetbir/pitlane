@@ -2,12 +2,15 @@
 // pages that lead into a race session (ui/app.ts runs the session and its loop).
 import { normalizeCode } from "roomkit/net/code";
 import { initialLang, setLang } from "./i18n/index.ts";
+import { Book } from "./book/book.ts";
 import { play } from "./ui/app.ts";
 import { Banner, noWebGL } from "./ui/banner.ts";
 import { hasWebGL, swapCanvas } from "./ui/canvas.ts";
+import { ControlsCard } from "./ui/controlscard.ts";
 import { garagePanel } from "./ui/garage.ts";
 import { showHome, showJoin, type Entry } from "./ui/home.ts";
 import { showLeaderboard } from "./ui/leaderboard.ts";
+import { loadSettings } from "./ui/prefs.ts";
 import { showSettings } from "./ui/settings.ts";
 import { focusFirst, page } from "./ui/widgets.ts";
 import { t } from "./i18n/index.ts";
@@ -25,11 +28,28 @@ function route(first: HTMLCanvasElement, ui: HTMLElement, banner: Banner): void 
   let canvas = first;
   const freshCanvas = (): HTMLCanvasElement => (canvas = swapCanvas(canvas, () => document.createElement("canvas")));
   const home = (): void => showHome(ui, nav);
+  // The manual and the controls card of the pages outside a race (a race has its own).
+  const book = new Book(() => ({ keys: loadSettings().keys }));
+  const card = new ControlsCard({
+    manual: () => book.open(),
+    settings: () => {
+      nav.settings();
+      document.getElementById("controls")?.scrollIntoView({ block: "start" });
+    },
+  });
+  document.body.append(card.el);
+  const away = () => {
+    card.hide();
+    book.close();
+  };
   const nav = {
     play: (name: string, entry: Entry) => {
+      away();
       if (!hasWebGL()) return noWebGL(ui);
       play({ canvas: freshCanvas, ui, banner, name, entry, home });
     },
+    manual: () => book.open(),
+    controls: () => card.open(loadSettings().keys, true),
     garage: () => {
       fill(ui, page("garage-page", t("garage.title"), home, garagePanel(home)));
       focusFirst(ui);

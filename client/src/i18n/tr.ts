@@ -32,6 +32,7 @@ export const TR = {
   "home.joinTitle": "Kodla katıl",
   "home.joinPrompt": "Odaya katıl",
   "home.manual": "El kitabı",
+  "home.controls": "Kontroller",
 
   "card.controls": "Kontroller",
   "card.keyboard": "Klavye",
