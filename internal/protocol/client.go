@@ -27,9 +27,10 @@ type ClientMsg struct {
 	Laps     int    `json:"laps,omitempty"`     // create: 3|5|8
 	Listed   *bool  `json:"listed,omitempty"`   // create
 
-	Th int `json:"th,omitempty"` // in: throttle 0..100
-	Br int `json:"br,omitempty"` // in: brake 0..100
-	St int `json:"st,omitempty"` // in: steer -127..127 (left +)
+	Th int  `json:"th,omitempty"` // in: throttle 0..100
+	Br int  `json:"br,omitempty"` // in: brake 0..100
+	St int  `json:"st,omitempty"` // in: steer -127..127 (left +)
+	Rv bool `json:"rv,omitempty"` // in: reverse gear selected (the throttle drives it)
 
 	Setup *SetupInts `json:"setup,omitempty"` // ready: exactly 7 integers [fw, rw, bb, gear, diff, susp, tc]
 }
@@ -115,27 +116,30 @@ func (m ClientMsg) Head() netproto.Header {
 
 // Input is the wire input of one tick. Pitlane has no one-shot presses, so
 // every input is its own latch and its own hold.
-type Input struct{ Th, Br, St int8 }
+type Input struct {
+	Th, Br, St int8
+	Rv         bool
+}
 
 func (in Input) Latch(Input) Input { return in }
 func (in Input) Held() Input       { return in }
 
-// Car converts to the car model's input: th/100, br/100, st/127.
+// Car converts to the car model's input: th/100, br/100, st/127, rv.
 func (in Input) Car() car.Input {
-	return car.Input{Throttle: float64(in.Th) / 100, Brake: float64(in.Br) / 100, Steer: float64(in.St) / 127}
+	return car.Input{Throttle: float64(in.Th) / 100, Brake: float64(in.Br) / 100, Steer: float64(in.St) / 127, Reverse: in.Rv}
 }
 
-// WireInput quantises a car input to the wire's units (th/100, br/100, st/127), as a
+// WireInput quantises a car input to the wire's units (th/100, br/100, st/127, rv), as a
 // client does before sending it.
 func WireInput(in car.Input) Input {
 	in = in.Clean()
-	return Input{Th: int8(math.Round(in.Throttle * 100)), Br: int8(math.Round(in.Brake * 100)), St: int8(math.Round(in.Steer * 127))}
+	return Input{Th: int8(math.Round(in.Throttle * 100)), Br: int8(math.Round(in.Brake * 100)), St: int8(math.Round(in.Steer * 127)), Rv: in.Reverse}
 }
 
 // Input converts an "in" message to a clamped input (also when m was not
 // built by DecodeClient).
 func (m ClientMsg) Input() Input {
-	return Input{Th: int8(clamp(m.Th, 0, 100)), Br: int8(clamp(m.Br, 0, 100)), St: int8(clamp(m.St, -127, 127))}
+	return Input{Th: int8(clamp(m.Th, 0, 100)), Br: int8(clamp(m.Br, 0, 100)), St: int8(clamp(m.St, -127, 127)), Rv: m.Rv}
 }
 
 // Latch returns m: Pitlane inputs have no one-shot presses to carry over.

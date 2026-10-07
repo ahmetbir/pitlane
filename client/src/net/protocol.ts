@@ -17,7 +17,7 @@ export type Hello = { t: "hello"; v: number; name: string; tok?: string };
 export type Create = { t: "create"; handling?: HandlingName; contact?: ContactName; laps?: 3 | 5 | 8; listed?: boolean };
 export type Join = { t: "join"; code: string };
 export type Quick = { t: "quick" };
-/** One tick of input in wire units: th 0..100, br 0..100, st −127..127 (left +); seq starts at 1. */
+/** One tick of input in wire units: th 0..100, br 0..100, st −127..127 (left +), rv reverse (omitted when off); seq starts at 1. */
 export type In = { t: "in"; seq: number } & WireInput;
 /** Garage setup [fw, rw, bb, gear, diff, susp, tc]; grid phase only. */
 export type Ready = { t: "ready"; setup: Setup };
@@ -28,22 +28,24 @@ export type Ping = { t: "ping"; ts: number };
 export type Chat = { t: "chat"; id: number };
 export type ClientMsg = Hello | Create | Join | Quick | In | Ready | Start | Ping | Chat;
 
-export type WireInput = { th: number; br: number; st: number };
+export type WireInput = { th: number; br: number; st: number; rv?: true };
 
 /** Go's math.Round: halves away from zero (Math.round rounds −2.5 to −2). */
 function goRound(x: number): number {
   return x < 0 ? -Math.round(-x) : Math.round(x);
 }
 
-/** Quantises a car input to wire units (protocol.WireInput). */
+/** Quantises a car input to wire units (protocol.WireInput); rv only when reversing (Go's omitempty). */
 export function wireInput(in_: Input): WireInput {
   const c = cleanInput(in_);
-  return { th: goRound(c.throttle * 100), br: goRound(c.brake * 100), st: goRound(c.steer * 127) };
+  const w: WireInput = { th: goRound(c.throttle * 100), br: goRound(c.brake * 100), st: goRound(c.steer * 127) };
+  if (c.reverse === true) w.rv = true;
+  return w;
 }
 
-/** The car model's input of a wire input (protocol.Input.Car): th/100, br/100, st/127. */
+/** The car model's input of a wire input (protocol.Input.Car): th/100, br/100, st/127, rv. */
 export function carInput(w: WireInput): Input {
-  return { throttle: w.th / 100, brake: w.br / 100, steer: w.st / 127 };
+  return { throttle: w.th / 100, brake: w.br / 100, steer: w.st / 127, reverse: w.rv === true };
 }
 
 // Server → client.

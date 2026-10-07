@@ -71,5 +71,11 @@ test("wire input quantises like protocol.WireInput and converts back like Input.
   // Halves round away from zero as Go's math.Round does.
   assert.deepEqual(wireInput({ throttle: 0.005, brake: 0.125, steer: -2.5 / 127 }), { th: 1, br: 13, st: -3 });
   assert.deepEqual(wireInput({ throttle: 2, brake: NaN, steer: 5 }), { th: 100, br: 0, st: 127 });
-  assert.deepEqual(carInput({ th: 50, br: 100, st: -127 }), { throttle: 0.5, brake: 1, steer: -1 });
+  assert.deepEqual(carInput({ th: 50, br: 100, st: -127 }), { throttle: 0.5, brake: 1, steer: -1, reverse: false });
+});
+
+test("reverse travels as rv, omitted when off (Go's omitempty)", () => {
+  assert.deepEqual(wireInput({ throttle: 0.5, brake: 0, steer: 0, reverse: true }), { th: 50, br: 0, st: 0, rv: true });
+  assert.equal("rv" in wireInput({ throttle: 1, brake: 0, steer: 0, reverse: false }), false);
+  assert.deepEqual(carInput({ th: 100, br: 0, st: 0, rv: true }), { throttle: 1, brake: 0, steer: 0, reverse: true });
 });

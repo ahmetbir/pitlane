@@ -37,14 +37,28 @@ func TestDecodeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := m.Input()
-	if in != (Input{80, 10, -64}) || m.Head().Seq != 5 || m.Latch(ClientMsg{}) != m {
+	if in != (Input{Th: 80, Br: 10, St: -64}) || m.Head().Seq != 5 || m.Latch(ClientMsg{}) != m {
 		t.Fatalf("in: %+v %+v", in, m.Head())
 	}
-	if in.Latch(Input{1, 2, 3}) != in || in.Held() != in {
+	if in.Latch(Input{Th: 1, Br: 2, St: 3}) != in || in.Held() != in {
 		t.Fatal("Input latch/held must return the receiver")
 	}
-	if c := in.Car(); c.Throttle != 0.8 || c.Brake != 0.1 || c.Steer != -64.0/127 {
+	if c := in.Car(); c.Throttle != 0.8 || c.Brake != 0.1 || c.Steer != -64.0/127 || c.Reverse {
 		t.Fatalf("car input: %+v", c)
+	}
+	m, err = DecodeClient([]byte(`{"t":"in","seq":6,"th":100,"rv":true}`))
+	if err != nil || m.Input() != (Input{Th: 100, Rv: true}) || !m.Input().Car().Reverse {
+		t.Fatalf("reverse: %+v %v", m, err)
+	}
+	if w := WireInput(car.Input{Throttle: 0.5, Reverse: true}); w != (Input{Th: 50, Rv: true}) {
+		t.Fatalf("wire reverse: %+v", w)
+	}
+	b, err := json.Marshal(ClientMsg{T: TIn, Seq: 7, Th: 100})
+	if err != nil || string(b) != `{"t":"in","seq":7,"th":100}` {
+		t.Fatalf("rv must be omitted when false: %s %v", b, err)
+	}
+	if b, _ = json.Marshal(ClientMsg{T: TIn, Seq: 7, Th: 100, Rv: true}); string(b) != `{"t":"in","seq":7,"th":100,"rv":true}` {
+		t.Fatalf("in with rv: %s", b)
 	}
 }
 
@@ -54,7 +68,7 @@ func TestDecodeClamps(t *testing.T) {
 		t.Fatalf("%+v %v", m, err)
 	}
 	m, err = DecodeClient([]byte(`{"t":"in","th":9223372036854775807,"st":9223372036854775807}`))
-	if err != nil || m.Th != 100 || m.St != 127 || m.Input() != (Input{100, 0, 127}) {
+	if err != nil || m.Th != 100 || m.St != 127 || m.Input() != (Input{Th: 100, St: 127}) {
 		t.Fatalf("%+v %v", m, err)
 	}
 }
