@@ -9,7 +9,7 @@
     "test": "node --experimental-strip-types --no-warnings --test 'src/**/*.test.ts'"
   },
   "dependencies": {
-    "roomkit": "git+https://github.com/ahmetbir/roomkit.git#v0.2.0",
+    "roomkit": "git+https://github.com/ahmetbir/roomkit.git#v0.3.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
