@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Controls, type PadLike } from "./input.ts";
+import { defaultBindings, rebind, type Bindings } from "./bindings.ts";
 
-function rig() {
+function rig(bindings?: Bindings) {
   const fns: Record<string, ((e: any) => void)[]> = {};
   let t = 100;
   let pad: PadLike = null;
@@ -13,7 +14,8 @@ function rig() {
   const dfns: (() => void)[] = [];
   const doc = { hidden: false, addEventListener: (_: string, f: () => void) => dfns.push(f), removeEventListener: (_: string, f: () => void) => dfns.splice(dfns.indexOf(f), 1) };
   let throws = false;
-  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t });
+  let vx = 0;
+  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t, bindings, vx: () => vx });
   const fire = (k: string, e: object) => (fns[k] ?? []).forEach((f) => f(e));
   return {
     c,
@@ -23,12 +25,13 @@ function rig() {
     blur: () => fire("blur", {}),
     setPad: (p: PadLike) => (pad = p),
     advance: (s: number) => (t += s),
+    setVX: (v: number) => (vx = v),
   };
 }
-const mkPad = (axis0: number, lt = 0, rt = 0): PadLike => ({
+const mkPad = (axis0: number, lt = 0, rt = 0, a = 0, b = 0): PadLike => ({
   mapping: "standard",
   axes: [axis0, 0],
-  buttons: Array.from({ length: 8 }, (_, i) => ({ value: i === 6 ? lt : i === 7 ? rt : 0 })),
+  buttons: Array.from({ length: 8 }, (_, i) => ({ value: i === 6 ? lt : i === 7 ? rt : i === 0 ? a : i === 1 ? b : 0 })),
 });
 
 test("throttle ramps 0 to 1 in 0.15 s, brake in 0.1 s", () => {
@@ -38,7 +41,7 @@ test("throttle ramps 0 to 1 in 0.15 s, brake in 0.1 s", () => {
   assert.equal(r.c.sample(0.075).th, 100);
   r.up("KeyW");
   assert.equal(r.c.sample(0.016).th, 0);
-  r.down("ArrowDown");
+  r.down("Space");
   assert.equal(r.c.sample(0.05).br, 50);
   assert.equal(r.c.sample(0.05).br, 100);
 });
@@ -205,4 +208,93 @@ test("idle: key presses and pad movement restart the clock, touch too", () => {
   assert.equal(r.c.idleS(), 10);
   r.c.touch();
   assert.equal(r.c.idleS(), 0);
+});
+
+test("space brakes; S brakes while rolling forward, reverses when stopped", () => {
+  const r = rig();
+  r.down("Space");
+  assert.deepEqual(r.c.sample(0.1), { th: 0, br: 100, st: 0 });
+  r.up("Space");
+  r.setVX(12);
+  r.down("KeyS");
+  assert.deepEqual(r.c.sample(0.1), { th: 0, br: 100, st: 0 }, "rolling: S brakes");
+  r.setVX(0.5);
+  assert.deepEqual(r.c.sample(0.075), { th: 50, br: 0, st: 0, rv: true }, "stopped: S drives the reverse gear");
+  r.setVX(-6);
+  assert.deepEqual(r.c.sample(0.075), { th: 100, br: 0, st: 0, rv: true }, "backing up: still reverse");
+  r.up("KeyS");
+  r.down("ArrowDown");
+  assert.equal(r.c.sample(0.016).rv, true, "↓ is the same action");
+});
+
+test("throttle held with S while stopped brakes (no reverse): a launch hold", () => {
+  const r = rig();
+  r.down("KeyW");
+  r.down("KeyS");
+  assert.deepEqual(r.c.sample(0.2), { th: 100, br: 100, st: 0 });
+});
+
+test("Shift+W while stopped holds a launch; once moving Shift does nothing", () => {
+  const r = rig();
+  r.down("ShiftLeft", {}, { shiftKey: true });
+  r.down("KeyW", {}, { shiftKey: true });
+  assert.deepEqual(r.c.sample(0.2), { th: 100, br: 100, st: 0 });
+  r.up("ShiftLeft");
+  assert.deepEqual(r.c.sample(0.016), { th: 100, br: 0, st: 0 }, "released: the launch");
+  r.down("ShiftRight", {}, { shiftKey: true });
+  r.setVX(3);
+  assert.deepEqual(r.c.sample(0.016), { th: 100, br: 0, st: 0 }, "moving: throttle only");
+  r.up("KeyW");
+  r.setVX(0);
+  assert.deepEqual(r.c.sample(0.2), { th: 0, br: 0, st: 0 }, "Shift alone: nothing");
+});
+
+test("ctrl chords stay ignored with Shift a game key", () => {
+  const r = rig();
+  r.down("KeyW", {}, { ctrlKey: true, shiftKey: true });
+  assert.equal(r.c.sample(1).th, 0);
+});
+
+test("custom bindings drive the actions; rebind() swaps the table live", () => {
+  const b = rebind(defaultBindings(), "throttle", 0, "KeyI");
+  const r = rig(b);
+  r.down("KeyW");
+  assert.equal(r.c.sample(1).th, 0, "W no longer bound");
+  r.down("KeyI");
+  assert.equal(r.c.sample(1).th, 100);
+  r.c.rebind(rebind(b, "brake", 0, "KeyI"));
+  assert.deepEqual(r.c.sample(1), { th: 0, br: 0, st: 0 }, "rebinding releases held keys");
+  r.down("KeyI");
+  assert.equal(r.c.sample(1).br, 100, "I now brakes");
+  r.down("Space");
+  assert.equal(r.c.sample(1).th, 100, "the swap gave Space to the throttle");
+});
+
+test("help: F1 or ? once per press, F1's browser default prevented", () => {
+  const r = rig();
+  let prevented = 0;
+  r.down("F1", {}, { preventDefault: () => prevented++ });
+  r.down("F1", {});
+  assert.equal(r.c.take("help"), true);
+  assert.equal(r.c.take("help"), false);
+  assert.equal(prevented, 1);
+  r.up("F1");
+  r.fire("keydown", { code: "Minus", key: "?", target: {} });
+  assert.equal(r.c.take("help"), true);
+});
+
+test("gamepad: B reverses when stopped and brakes when rolling; A + RT holds a launch", () => {
+  const r = rig();
+  r.setPad(mkPad(0, 0, 0, 0, 1));
+  assert.deepEqual(r.c.sample(0.016), { th: 100, br: 0, st: 0, rv: true });
+  r.setVX(10);
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 100, st: 0 });
+  r.setVX(0);
+  r.setPad(mkPad(0, 0, 0.5, 1, 0));
+  assert.deepEqual(r.c.sample(0.016), { th: 47, br: 100, st: 0 });
+  r.setVX(2);
+  assert.deepEqual(r.c.sample(0.016), { th: 47, br: 0, st: 0 }, "moving: A does nothing");
+  r.setVX(0);
+  r.setPad(mkPad(0, 0, 0, 1, 0));
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 0, st: 0 }, "A alone: nothing");
 });

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaultSetup, type Setup } from "../car/car.ts";
+import { defaultBindings, rebind } from "../input/bindings.ts";
 import { adjust, SLIDERS } from "./garage.ts";
 import { defaultSettings, loadSettings, loadSetup, saveSettings, saveSetup, storedName, storeName } from "./prefs.ts";
 
@@ -50,10 +51,17 @@ test("garage: a malformed stored setup falls back to the default", () => {
 test("settings and name persist and validate", () => {
   const st = new Mem();
   assert.deepEqual(loadSettings(st), defaultSettings());
-  saveSettings({ camera: "cockpit", volume: 40 }, st);
-  assert.deepEqual(loadSettings(st), { camera: "cockpit", volume: 40 });
+  const keys = rebind(defaultBindings(), "brake", 0, "KeyB");
+  saveSettings({ camera: "cockpit", volume: 40, keys, seenControls: true }, st);
+  assert.deepEqual(loadSettings(st), { camera: "cockpit", volume: 40, keys, seenControls: true });
   st.setItem("pitlane.settings", '{"camera":"drone","volume":400}');
-  assert.deepEqual(loadSettings(st), { camera: "chase", volume: 100 });
+  assert.deepEqual(loadSettings(st), { camera: "chase", volume: 100, keys: defaultBindings(), seenControls: false }, "v1 settings: default keys, card unseen");
+  st.setItem("pitlane.settings", '{"keys":{"brake":["KeyW"]},"seenControls":"yes"}');
+  const s = loadSettings(st);
+  assert.deepEqual(s.keys.brake, ["KeyW"]);
+  assert.deepEqual(s.keys.throttle, ["ArrowUp"], "a stored key wins over a default");
+  assert.equal(s.seenControls, false);
   storeName("  Ayrton  ", st);
   assert.equal(storedName(st), "Ayrton");
 });
+

@@ -4,6 +4,7 @@
 import { tokenStore } from "roomkit/net/pilot";
 import { slot, type Store } from "roomkit/store";
 import { clampSetup, defaultSetup, TC, type Setup } from "../car/car.ts";
+import { cleanBindings, defaultBindings, type Bindings } from "../input/bindings.ts";
 import type { CamMode } from "../render/cams.ts";
 
 type Get = Pick<Store, "getItem"> | null;
@@ -55,10 +56,11 @@ export function saveSetup(s: Setup, store?: Set): Setup {
   return c;
 }
 
-export type Settings = { camera: CamMode; volume: number };
+/** seenControls: the first-race controls card was dismissed. */
+export type Settings = { camera: CamMode; volume: number; keys: Bindings; seenControls: boolean };
 
 export function defaultSettings(): Settings {
-  return { camera: "chase", volume: 70 };
+  return { camera: "chase", volume: 70, keys: defaultBindings(), seenControls: false };
 }
 
 export function loadSettings(store?: Get): Settings {
@@ -68,9 +70,9 @@ export function loadSettings(store?: Get): Settings {
   const o = v as Record<string, unknown>;
   const camera = o.camera === "cockpit" || o.camera === "chase" ? o.camera : d.camera;
   const volume = Number.isInteger(o.volume) ? Math.min(100, Math.max(0, o.volume as number)) : d.volume;
-  return { camera, volume };
+  return { camera, volume, keys: cleanBindings(o.keys), seenControls: o.seenControls === true };
 }
 
 export function saveSettings(s: Settings, store?: Set): void {
-  SETTINGS.set(JSON.stringify({ camera: s.camera, volume: s.volume }), store);
+  SETTINGS.set(JSON.stringify({ camera: s.camera, volume: s.volume, keys: s.keys, seenControls: s.seenControls }), store);
 }

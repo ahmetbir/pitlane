@@ -149,3 +149,25 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
 .stat { display: flex; flex-direction: column; gap: 2px; }
 .stat strong { font-size: 1.25rem; }
+
+/* Key caps and key lists (settings, controls card, manual) */
+kbd { font-family: var(--mono); font-size: 0.82em; font-weight: 700; color: #fff; background: #1f2631; border: 1px solid rgba(255, 255, 255, 0.14); border-bottom-width: 2px; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+.keytable { border-collapse: collapse; font-size: 0.9rem; width: 100%; }
+.keytable td { padding: 5px 8px 5px 0; vertical-align: top; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+.keytable td:first-child { white-space: nowrap; width: 1%; padding-right: 14px; }
+.actions.start { justify-content: flex-start; }
+
+/* Settings: the key editor */
+.settings-page .panel { max-width: 860px; }
+.settings-page section > h2 { margin-top: 8px; }
+.keys-editor { display: flex; flex-direction: column; gap: 12px; }
+.table.keys th { text-align: left; font-size: 0.92rem; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; padding: 6px 10px 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+.table.keys td { padding: 4px 6px; }
+.keycap { appearance: none; min-width: 7.5em; font: inherit; font-family: var(--mono); font-weight: 700; font-size: 0.86rem; color: #fff; background: #1b212b; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 7px; padding: 5px 10px; cursor: pointer; }
+.keycap:hover { border-color: rgba(255, 255, 255, 0.22); }
+.keycap:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.keycap.listening { color: var(--yellow); border-color: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { border-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .keycap.listening { animation: none; } }
+
+.table.keys { width: auto; } .table.keys td:last-child { padding-right: 0; }

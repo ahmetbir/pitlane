@@ -1,17 +1,35 @@
 // Keyboard and gamepad input. Keyboard values slew toward their targets; a
 // moving gamepad (standard mapping) overrides the keyboard for GAMEPAD_HOLD_S.
-// Output is in wire units (th/br 0..100, st −127..127, left +).
+// Output is in wire units (th/br 0..100, st −127..127, left +, rv reverse).
+//
+// Keys come from the bindings (bindings.ts). The brake/reverse key brakes
+// while the car rolls forward faster than STOPPED_VX and drives the reverse
+// gear below it; the launch key held with the throttle while stopped holds
+// the car on the brakes at full revs (car.ts launch), released it launches.
+// Shift is a game key (the launch chord); Ctrl, Alt and Meta chords are the
+// browser's and are ignored.
 
 import { wireInput, type WireInput } from "../net/protocol.ts";
+import { actionMap, defaultBindings, type Action, type Bindings } from "./bindings.ts";
 
 const STEER_RISE = 3; // per second toward ±1
 const STEER_RETURN = 5; // per second toward 0
-const THROTTLE_RAMP_S = 0.15;
+/** Seconds a throttle key takes from 0 to full. */
+export const THROTTLE_RAMP_S = 0.15;
 const BRAKE_RAMP_S = 0.1;
 const DEADZONE = 0.08;
 const TRIGGER_DEADZONE = 0.05;
 const MOVE_EPS = 0.02;
-const GAMEPAD_HOLD_S = 2;
+/** Seconds a gamepad keeps the car after its last movement. */
+export const GAMEPAD_HOLD_S = 2;
+/** At or below this forward speed (m/s) the car counts as stopped: brake/reverse reverses, launch holds. */
+export const STOPPED_VX = 0.5;
+
+// Standard-mapping buttons.
+const PAD_A = 0;
+const PAD_B = 1;
+const PAD_LT = 6;
+const PAD_RT = 7;
 
 export type PadLike = { mapping?: string; axes: readonly number[]; buttons: readonly { value: number; pressed?: boolean }[] } | null;
 
@@ -23,13 +41,14 @@ export type ControlsDeps = {
   doc?: { hidden: boolean; addEventListener(type: string, fn: () => void): void; removeEventListener(type: string, fn: () => void): void };
   /** Seconds. */
   now: () => number;
+  /** The key bindings (default: defaultBindings()). */
+  bindings?: Bindings;
+  /** The own car's forward speed VX (m/s); 0 before it is on track. */
+  vx?: () => number;
 };
 
-const CODES: Record<string, "up" | "down" | "left" | "right" | "cam" | "back"> = {
-  KeyW: "up", ArrowUp: "up", KeyS: "down", ArrowDown: "down",
-  KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right",
-  KeyC: "cam", KeyR: "back",
-};
+/** Keys whose browser default (scroll, help page) a game press must not trigger. */
+const NO_DEFAULT = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "F1", "Tab", "Backspace", "Slash", "Quote"]);
 
 function typing(t: unknown): boolean {
   const el = t as { tagName?: string; isContentEditable?: boolean } | null;
@@ -45,8 +64,9 @@ function rescale(v: number, dz: number): number {
 }
 
 export class Controls {
-  private readonly held = new Set<string>();
-  private camPressed = false;
+  private readonly held = new Set<Action>();
+  private readonly pressed = new Set<Action>(); // one-shot presses: camera, help
+  private keys: Map<string, Action>;
   private th = 0;
   private br = 0;
   private st = 0;
@@ -65,6 +85,7 @@ export class Controls {
 
   constructor(deps: ControlsDeps) {
     this.deps = deps;
+    this.keys = actionMap(deps.bindings ?? defaultBindings());
     this.active = deps.now();
     deps.target.addEventListener("keydown", this.down);
     deps.target.addEventListener("keyup", this.up);
@@ -90,58 +111,79 @@ export class Controls {
     this.active = this.deps.now();
   }
 
-  /** True once per C press. */
-  cameraToggle(): boolean {
-    const p = this.camPressed;
-    this.camPressed = false;
-    return p;
+  /** New bindings (the settings changed); held keys are released. */
+  rebind(b: Bindings): void {
+    this.keys = actionMap(b);
+    this.release();
   }
 
-  /** True while R is held. */
+  /** True once per camera key press. */
+  cameraToggle(): boolean {
+    return this.take("camera");
+  }
+
+  /** True once per press of a one-shot action (camera, help); clears it. */
+  take(a: Action): boolean {
+    return this.pressed.delete(a);
+  }
+
+  /** True while the look-back key is held. */
   get lookBack(): boolean {
-    return this.held.has("back");
+    return this.held.has("lookBack");
   }
 
   sample(dtS: number): WireInput {
-    const pad = this.pollPad();
+    const vx = this.deps.vx?.() ?? 0;
+    const stopped = !(vx > STOPPED_VX);
+    const pad = this.pollPad(stopped);
     if (pad) {
       this.th = pad.th;
       this.br = pad.br;
       this.st = pad.st;
-      return wireInput({ throttle: this.th, brake: this.br, steer: this.st });
+      return wireInput({ throttle: this.th, brake: this.br, steer: this.st, reverse: pad.rv });
     }
     const dt = Number.isFinite(dtS) && dtS > 0 ? dtS : 0;
-    this.th = this.held.has("up") ? Math.min(1, this.th + dt / THROTTLE_RAMP_S) : 0;
-    this.br = this.held.has("down") ? Math.min(1, this.br + dt / BRAKE_RAMP_S) : 0;
+    const go = this.held.has("throttle");
+    const back = this.held.has("brakeReverse");
+    // Throttle held, the brake/reverse key brakes (W+S stopped is a launch hold too).
+    const reverse = back && stopped && !go;
+    const launch = go && stopped && this.held.has("launch");
+    const brake = this.held.has("brake") || (back && !reverse) || launch;
+    this.th = go || reverse ? Math.min(1, this.th + dt / THROTTLE_RAMP_S) : 0;
+    this.br = brake ? Math.min(1, this.br + dt / BRAKE_RAMP_S) : 0;
     const dir = (this.held.has("left") ? 1 : 0) - (this.held.has("right") ? 1 : 0);
     const rate = dir === 0 ? STEER_RETURN : STEER_RISE;
     const d = dir * 1 - this.st;
     const step = rate * dt;
     this.st = Math.abs(d) <= step ? dir : this.st + Math.sign(d) * step;
-    return wireInput({ throttle: this.th, brake: this.br, steer: this.st });
+    return wireInput({ throttle: this.th, brake: this.br, steer: this.st, reverse });
   }
 
   private key(e: KeyboardEvent, isDown: boolean): void {
-    const k = CODES[e.code];
-    const space = e.code === "Space";
-    if (!k && !space) return;
-    const mod = e.ctrlKey || e.metaKey || e.altKey;
-    if (isDown && (mod || typing(e.target))) return;
-    if (isDown && !e.shiftKey && (space || e.code.startsWith("Arrow"))) e.preventDefault?.();
-    if (!k) return;
-    if (isDown) {
-      if (k === "cam" && !this.held.has(k)) this.camPressed = true;
-      this.held.add(k);
-    } else this.held.delete(k);
+    const a = this.keys.get(e.code) ?? (e.key === "?" ? "help" : undefined);
+    if (!a) return;
+    if (!isDown) {
+      this.held.delete(a);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+    if (NO_DEFAULT.has(e.code)) e.preventDefault?.();
+    if ((a === "camera" || a === "help") && !this.held.has(a)) this.pressed.add(a);
+    this.held.add(a);
   }
 
   private release(): void {
     this.held.clear();
+    this.pressed.clear();
     this.th = this.br = this.st = 0;
   }
 
-  /** The active pad's input, or null when no standard pad moved within GAMEPAD_HOLD_S. */
-  private pollPad(): { th: number; br: number; st: number } | null {
+  /**
+   * The active pad's input, or null when no standard pad moved within
+   * GAMEPAD_HOLD_S. B brakes while rolling forward and reverses at full
+   * throttle while stopped; A held with RT while stopped holds a launch.
+   */
+  private pollPad(stopped: boolean): { th: number; br: number; st: number; rv: boolean } | null {
     const now = this.deps.now();
     let pad: PadLike = null;
     try {
@@ -158,30 +200,38 @@ export class Controls {
       this.padActiveUntil = -Infinity;
       return null;
     }
-    const cur = [pad.axes[0] ?? 0, pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0].map((v) => (Number.isFinite(v) ? v : 0));
+    const btn = (i: number) => pad.buttons[i]?.value ?? (pad.buttons[i]?.pressed ? 1 : 0);
+    const cur = [pad.axes[0] ?? 0, btn(PAD_LT), btn(PAD_RT), btn(PAD_A), btn(PAD_B)].map((v) => (Number.isFinite(v) ? v : 0));
     const prev = this.prev ?? cur;
     this.prev = cur;
-    const moved = Math.abs(cur[0]) > DEADZONE || cur[1] > TRIGGER_DEADZONE || cur[2] > TRIGGER_DEADZONE
+    const moved = Math.abs(cur[0]) > DEADZONE || cur.slice(1).some((v) => v > TRIGGER_DEADZONE)
       || cur.some((v, i) => Math.abs(v - prev[i]) > MOVE_EPS);
     if (moved) {
       this.padActiveUntil = now + GAMEPAD_HOLD_S;
       this.active = now;
     }
     if (now > this.padActiveUntil) return null;
+    const rt = rescale(cur[2], TRIGGER_DEADZONE), lt = rescale(cur[1], TRIGGER_DEADZONE);
+    const a = cur[3] > 0.5, b = cur[4] > 0.5;
+    const rv = b && stopped; // B: full reverse while stopped, the brake while rolling forward
+    const launch = a && stopped && rt > 0 && !b;
     return {
-      th: rescale(cur[2], TRIGGER_DEADZONE),
-      br: rescale(cur[1], TRIGGER_DEADZONE),
+      th: rv ? 1 : rt,
+      br: launch || (b && !stopped) ? 1 : lt,
       st: 0 - rescale(cur[0], DEADZONE), // stick right = +axis = negative st
+      rv,
     };
   }
 }
 
-/** Controls on the browser's window and navigator. */
-export function browserControls(): Controls {
+/** Controls on the browser's window and navigator; vx: the own car's forward speed. */
+export function browserControls(bindings: Bindings, vx: () => number): Controls {
   return new Controls({
     target: window,
     doc: document,
     getGamepads: () => navigator.getGamepads(),
     now: () => performance.now() / 1000,
+    bindings,
+    vx,
   });
 }

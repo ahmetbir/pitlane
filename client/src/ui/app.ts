@@ -40,7 +40,7 @@ export function play(o: PlayOpts): void {
   const { ui, banner } = o;
   const track = kiyi();
   const settings = loadSettings();
-  const controls = browserControls();
+  const controls = browserControls(settings.keys, () => session.ownCar()?.vx ?? 0);
   const leaveBtn = h("button", { type: "button", class: "btn small ghost hud-leave" }, t("grid.leave"));
   leaveBtn.addEventListener("click", () => leave());
   const hud = new Hud(track.segs, leaveBtn);
