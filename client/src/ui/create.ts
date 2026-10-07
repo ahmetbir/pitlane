@@ -5,7 +5,10 @@ import { t, type Key } from "../i18n/index.ts";
 import type { ContactName, Create, HandlingName } from "../net/protocol.ts";
 import { seg } from "./widgets.ts";
 
-export type Choice = { handling: HandlingName; contact: ContactName; laps: 3 | 5 | 8; listed: boolean };
+/** The race distances a room may have (protocol: 3, 5 or 8). */
+export const LAP_CHOICES = [3, 5, 8] as const;
+
+export type Choice = { handling: HandlingName; contact: ContactName; laps: (typeof LAP_CHOICES)[number]; listed: boolean };
 
 export const DEFAULT_CHOICE: Choice = { handling: "arcade", contact: "soft", laps: 3, listed: true };
 
@@ -31,7 +34,7 @@ export function createDialog(go: (entry: Create) => void): HTMLDialogElement {
     c.contact = v;
     hints();
   });
-  const laps = seg(t("create.laps"), ([3, 5, 8] as const).map((v) => ({ v, label: String(v) })), c.laps, (v) => {
+  const laps = seg(t("create.laps"), LAP_CHOICES.map((v) => ({ v, label: String(v) })), c.laps, (v) => {
     c.laps = v;
   });
   const listed = h("input", { type: "checkbox", checked: true });

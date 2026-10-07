@@ -166,7 +166,8 @@ const launchBrk = 0.5;
 export const launchRPM = 9000.0;
 const launchUp = 133.33333333333334; // rpm per step at full throttle on the hold (8000 rpm/s)
 const slipDrop = 100.0; // rpm per step while the clutch slips (6000 rpm/s)
-const launchEnd = 5.0; // the clutch slip ends at this speed (m/s) at the latest
+/** The clutch slip after a launch ends at this speed (m/s) at the latest. */
+export const launchEnd = 5.0;
 const tcCut = 0.5;
 const tcShare = 0.8;
 /** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */

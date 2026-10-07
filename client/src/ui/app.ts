@@ -1,8 +1,10 @@
 // One race session: the socket, the 3D view, the race loop and the in-session
 // screens (grid with the garage overlay, HUD, results, error), switched by
 // flow.ts from the server's messages, plus the controls card (shown once
-// before the first race, then on the help key). leave() tears everything down.
+// before the first race, then on the help key) and the driver's manual.
+// leave() tears everything down.
 import { RaceAudio } from "../audio/engine.ts";
+import { Book } from "../book/book.ts";
 import { speed, type Input } from "../car/car.ts";
 import { RaceView } from "../game/view.ts";
 import { startLoop } from "../game/loop.ts";
@@ -28,7 +30,7 @@ import { resultsView } from "./results.ts";
 import { focusFirst, Toast } from "./widgets.ts";
 
 /** A race with no key or pad activity for this long is left (an idle tab costs bandwidth). */
-const IDLE_LEAVE_S = 5 * 60;
+export const IDLE_LEAVE_S = 5 * 60;
 const IDLE_CHECK_MS = 5000; // a timer, not the frame loop: a hidden tab draws no frames
 
 export type PlayOpts = {
@@ -45,12 +47,14 @@ export function play(o: PlayOpts): void {
   const settings = loadSettings();
   const keys = settings.keys;
   const controls = browserControls(keys, () => session.ownCar()?.vx ?? 0);
+  const book = new Book(() => ({ keys }));
   const card = new ControlsCard({
     closed: () => {
       if (settings.seenControls) return;
       settings.seenControls = true;
       saveSettings({ ...loadSettings(), seenControls: true });
     },
+    manual: () => book.open(),
   });
   document.body.append(card.el);
   const leaveBtn = h("button", { type: "button", class: "btn small ghost hud-leave" }, t("grid.leave"));
@@ -64,8 +68,9 @@ export function play(o: PlayOpts): void {
     return b;
   };
   const helpBtn = tool("?", t("hud.help"), () => card.toggle(keys));
+  const manualBtn = tool(t("hud.manual"), t("hud.manual"), () => book.open());
   const chord = (a: Action) => `${firstKey(keys, a)}+${firstKey(keys, "throttle")}`;
-  const hud = new Hud(track.segs, [leaveBtn, helpBtn], t("hud.launchHint", { chord1: chord("brake"), chord2: chord("launch") }));
+  const hud = new Hud(track.segs, [leaveBtn, helpBtn, manualBtn], t("hud.launchHint", { chord1: chord("brake"), chord2: chord("launch") }));
   let shownTC = -1;
   const toast = new Toast(); // over the garage overlay
   const audio = new RaceAudio(settings.volume);
@@ -239,6 +244,7 @@ export function play(o: PlayOpts): void {
     controls.dispose();
     card.hide();
     card.el.remove();
+    book.close();
     hud.dispose();
     grid.dispose();
     toast.clear();
