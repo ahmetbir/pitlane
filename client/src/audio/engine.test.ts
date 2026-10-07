@@ -122,3 +122,14 @@ test("volume setting 0..100 drives the master gain", () => {
   assert.deepEqual(s.vols, [0.7, 0, 1]);
   assert.equal(volumeGain(NaN), 0);
 });
+
+test("the jump-start buzz sounds only on the race screen", () => {
+  const s = fakeShell();
+  const a = new RaceAudio(70, () => s.shell);
+  a.penalty();
+  assert.equal(s.tones.length, 0);
+  a.setActive(true);
+  a.penalty();
+  assert.equal(s.tones.length, 2);
+  a.dispose();
+});

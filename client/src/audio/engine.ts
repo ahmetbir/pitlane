@@ -222,6 +222,13 @@ export class RaceAudio {
     this.shell.tone("sine", 110, 38, 0.22, g);
   }
 
+  /** The own jump-start penalty: a low double buzz. */
+  penalty(): void {
+    if (!this.car.isOn()) return;
+    this.shell.tone("square", 220, 220, 0.18, 0.3);
+    this.shell.tone("square", 165, 165, 0.34, 0.3);
+  }
+
   /** Per frame while the race screen is up. */
   frame(dt: number, own: Own, throttle: number, others: readonly Other[]): void {
     this.cooldown = Math.max(0, this.cooldown - dt);

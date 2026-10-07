@@ -68,6 +68,7 @@
   .hud .lamps { gap: 8px; padding: 8px 10px; }
   .hud .hint-banner { top: 30%; white-space: normal; text-align: center; max-width: calc(100% - 32px); }
   .hud .hint-banner.warn { font-size: 1.2rem; }
+  .hud .pen-banner { top: 26%; font-size: 1.15rem; white-space: normal; text-align: center; max-width: calc(100% - 32px); }
   #banner { top: 64px; }
 }
 
@@ -79,6 +80,9 @@
 .hud .dash-tags:not(:has(:not([hidden]))) { display: none; }
 .hud .launch-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 99px; text-shadow: none; }
 .hud .launch-badge { color: #111; background: var(--yellow); }
+.hud .pen-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 99px; text-shadow: none; color: #fff; background: #e23b30; }
+.hud .pen-banner { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); padding: 10px 22px; border-radius: 10px; font-size: 1.7rem; font-weight: 800; letter-spacing: 0.06em; color: #fff; background: #e23b30; opacity: 0; pointer-events: none; transition: opacity 0.2s; white-space: nowrap; z-index: 2; }
+.hud .pen-banner.on { opacity: 1; }
 .hud .launch-badge.ready { background: var(--green); }
 .hud .rpm-fill.launch { background: var(--yellow); }
 .hud .rpm-fill.ready { background: var(--green); box-shadow: 0 0 10px rgba(47, 211, 107, 0.8); }

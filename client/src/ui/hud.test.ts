@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLang } from "../i18n/index.ts";
-import { absBadge, gapText, gearLabel, lapOf, launchReady, liveParts, rpmFill, tcBadge } from "./hud.ts";
+import { absBadge, penBadge, gapText, gearLabel, lapOf, launchReady, liveParts, rpmFill, tcBadge } from "./hud.ts";
 import { launchRPM } from "../car/car.ts";
 import { fastest, resultCells } from "./results.ts";
 
@@ -63,4 +63,12 @@ test("the live readout: BB 58.0 · TC 1 · ABS 1 · DIFF 5; Arcade TC/ABS A; off
   assert.equal(absBadge(3), "ABS 3");
   setLang("tr", null);
   assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 2, 0], false), ["FD 58,0", "TC 2", "ABS KAPALI", "DİF 5"]);
+});
+
+test("the penalty badge: +5 s / +5 sn, empty without a penalty", () => {
+  setLang("en", null);
+  assert.equal(penBadge(5000), "+5 s");
+  assert.equal(penBadge(0), "");
+  setLang("tr", null);
+  assert.equal(penBadge(5000), "+5 sn");
 });

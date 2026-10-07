@@ -12,7 +12,7 @@ function row(id: number, s: number, lap = 0, flags = 0): number[] {
   const [x, z] = tr.point(((s % L) + L) % L, 0);
   return [id, Math.round(x * 100), Math.round(z * 100), 0, 0, 0, 0, 0, lap, Math.round((((s % L) + L) % L) * 10), flags];
 }
-const snap = (phase: "lights" | "racing" | "finish", clock: number, cars: number[][]): ServerMsg => ({ t: "snap", tick: 1, ack: 0, phase, clock, cars });
+const snap = (phase: "grid" | "lights" | "racing" | "finish", clock: number, cars: number[][]): ServerMsg => ({ t: "snap", tick: 1, ack: 0, phase, clock, cars });
 
 test("HUD from fake messages: position, lap, gaps with names, off track", () => {
   const rs = new RaceState(tr, 3, () => 2);
@@ -68,7 +68,7 @@ test("wrong way: driving against the track direction", () => {
 test("a reconnect into the same car keeps last, best and position; a new car starts over", () => {
   const welcome = (car: number): ServerMsg => ({
     t: "welcome", you: 1, code: "K3FQ", car, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: false,
-    setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 },
+    setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 }, pen: 0,
   });
   let own = 2;
   const rs = new RaceState(tr, 3, () => own);
@@ -87,4 +87,24 @@ test("a reconnect into the same car keeps last, best and position; a new car sta
   v = rs.hud(null);
   assert.equal(v.best, 0, "another car: its history is unknown");
   assert.equal(v.current, null);
+});
+
+test("penalty: a pen for the own car adds up, a welcome restores it, the grid clears it, others' do not count", () => {
+  const welcome = (pen: number): ServerMsg => ({
+    t: "welcome", you: 1, code: "K3FQ", car: 2, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: false,
+    setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 }, pen,
+  });
+  const rs = new RaceState(tr, 3, () => 2);
+  rs.apply(welcome(0));
+  rs.apply(snap("lights", 0, [row(2, L - 18)]));
+  assert.equal(rs.hud(null).penMs, 0);
+  rs.apply({ t: "pen", car: 3, ms: 5000, why: "jump" });
+  assert.equal(rs.hud(null).penMs, 0, "another car's penalty");
+  rs.apply({ t: "pen", car: 2, ms: 5000, why: "jump" });
+  assert.equal(rs.hud(null).penMs, 5000);
+  rs.apply(welcome(5000)); // a reconnect
+  rs.apply(snap("racing", 1000, [row(2, L + 30)]));
+  assert.equal(rs.hud(null).penMs, 5000);
+  rs.apply(snap("grid", 0, [row(2, 0)]));
+  assert.equal(rs.hud(null).penMs, 0, "next race");
 });

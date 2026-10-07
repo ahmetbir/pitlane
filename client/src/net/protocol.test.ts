@@ -15,7 +15,7 @@ test("version is 3", () => {
 
 test("every documented server example decodes", () => {
   const ex = goExamples();
-  assert.deepEqual(ex.map((l) => JSON.parse(l).t), ["welcome", "dmg", "snap", "grid", "lights", "lights", "lap", "results", "wing", "reset"]);
+  assert.deepEqual(ex.map((l) => JSON.parse(l).t), ["welcome", "dmg", "pen", "snap", "grid", "lights", "lights", "lap", "results", "wing", "reset"]);
   for (const l of ex) assert.ok(decodeServer(JSON.parse(l)), l);
 });
 
@@ -56,10 +56,13 @@ test("malformed messages are dropped", () => {
     { t: "snap", tick: 1, ack: 0, phase: "racing", clock: 0, cars: [[1, 2, 3]] },
     { t: "snap", tick: 1, ack: 0, phase: "warmup", clock: 0, cars: [] },
     { t: "snap", tick: 1.5, ack: 0, phase: "racing", clock: 0, cars: [] },
-    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "drift", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 } },
-    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5], dmg: { fw: 0, rw: 0, su: 0 } },
-    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1], dmg: { fw: 0, rw: 0, su: 0 } },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "drift", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 }, pen: 0 },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5], dmg: { fw: 0, rw: 0, su: 0 }, pen: 0 },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1], dmg: { fw: 0, rw: 0, su: 0 }, pen: 0 },
     { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1, 1] },
+    { t: "welcome", you: 1, code: "K3FQ", car: 1, handling: "sim", contact: "soft", laps: 5, track: "kiyi", creator: true, setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 } },
+    { t: "pen", car: 1, ms: 5000 },
+    { t: "pen", car: 1, ms: 5000.5, why: "jump" },
     { t: "dmg", car: 1, fw: 0.5, rw: 0, su: 0 },
     { t: "lights", on: 0, out: "x" },
     { t: "lap", car: 1, lap: 1, ms: 1, valid: 1, best: 0 },

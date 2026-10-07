@@ -18,6 +18,7 @@ const RPM_LIMIT = 13500;
 const RPM_SHIFT = 12800; // the gearbox's upshift point
 const GO_MS = 1200;
 const LAUNCH_READY = launchRPM - 100; // the bar turns green: the hold is at its rpm
+const PEN_BANNER_MS = 4000; // the jump-start banner stays up this long
 const HOT_MS = 1500; // a live value just changed stays lit this long
 
 /** The live readout's setup indices, in display order. */
@@ -31,6 +32,8 @@ export type HudText = {
   ahead: GapView | null; behind: GapView | null;
   sectors: readonly SectorColour[];
   finished: boolean; wrongWay: boolean; offTrack: boolean;
+  /** The own car's penalty this race, ms (0 = none). */
+  penMs: number;
 };
 
 /** The lap being driven: laps completed + 1, never past the race distance. */
@@ -51,6 +54,11 @@ export function gearLabel(gear: number): string {
 /** Whether a launch hold's engine is at the launch rpm (the bar turns green). */
 export function launchReady(rpm: number): boolean {
   return rpm >= LAUNCH_READY;
+}
+
+/** The penalty badge: "+5 s" (whole seconds, as the results table). */
+export function penBadge(ms: number): string {
+  return ms > 0 ? t("hud.pen", { n: Math.round(ms / 1000) }) : "";
 }
 
 /** The TC badge: "TC 2", "TC OFF". */
@@ -109,6 +117,9 @@ export class Hud {
   private hot = -1; // the LIVE_ORDER slot lit, −1 none
   private hotTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly launch = h("span", { class: "launch-badge", hidden: true }, t("hud.launch"));
+  private readonly penEl = h("span", { class: "pen-badge", hidden: true });
+  private readonly penBanner = h("div", { class: "pen-banner", role: "alert" });
+  private penTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly launchHint = h("p", { class: "launch-hint" });
   private readonly hint = h("div", { class: "hint-banner", role: "status" });
   private readonly toasts = new Toast();
@@ -136,8 +147,8 @@ export class Hud {
         h("div", { class: "dash" }, this.speed, h("span", { class: "unit" }, t("hud.kmh")), h("span", { class: "gear-box" }, h("span", { class: "k" }, t("hud.gear")), this.gear)),
         this.rpmBar,
         this.liveEl,
-        h("div", { class: "dash-tags" }, this.launch)),
-      this.hint, this.toasts.el, this.lightsEl);
+        h("div", { class: "dash-tags" }, this.launch, this.penEl)),
+      this.penBanner, this.hint, this.toasts.el, this.lightsEl);
   }
 
   /** The text parts (~10 Hz). */
@@ -154,6 +165,9 @@ export class Hud {
     });
     this.gapLine(this.ahead, t("hud.ahead"), v.ahead);
     this.gapLine(this.behind, t("hud.behind"), v.behind);
+    const pen = penBadge(v.penMs);
+    text(this.penEl, pen);
+    this.penEl.hidden = pen === "";
     const hint = v.finished ? t("hud.finished") : v.wrongWay ? t("hud.wrongWay") : v.offTrack ? t("hud.offTrack") : "";
     text(this.hint, hint);
     this.hint.className = `hint-banner ${hint ? "on" : ""} ${v.wrongWay && !v.finished ? "warn" : ""}`;
@@ -232,6 +246,17 @@ export class Hud {
     this.lightsEl.hidden = true;
   }
 
+  /** The own jump-start banner: up for PEN_BANNER_MS ("JUMP START · +5 s penalty"). */
+  penalty(ms: number): void {
+    text(this.penBanner, t("hud.jump", { n: Math.round(ms / 1000) }));
+    this.penBanner.classList.add("on");
+    if (this.penTimer !== null) clearTimeout(this.penTimer);
+    this.penTimer = setTimeout(() => {
+      this.penBanner.classList.remove("on");
+      this.penTimer = null;
+    }, PEN_BANNER_MS);
+  }
+
   /** A short message in the middle of the screen. */
   toast(msg: string): void {
     this.toasts.show(msg);
@@ -241,6 +266,7 @@ export class Hud {
     this.toasts.clear();
     if (this.goTimer !== null) clearTimeout(this.goTimer);
     if (this.hotTimer !== null) clearTimeout(this.hotTimer);
+    if (this.penTimer !== null) clearTimeout(this.penTimer);
   }
 
   private gapLine(el: HTMLElement, label: string, g: GapView | null): void {

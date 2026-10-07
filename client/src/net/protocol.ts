@@ -66,6 +66,8 @@ export type Welcome = {
   t: "welcome"; you: number; code: string; tok?: string;
   car: number; handling: HandlingName; contact: ContactName; laps: number; track: string; creator: boolean;
   setup: Setup; dmg: WireDamage;
+  /** The car's penalty so far, ms (a reconnect shows the badge again). */
+  pen: number;
 };
 /** 30 Hz state; cars rows as EncodeCar (decodeCar). clock: race clock ms. */
 export type Snap = { t: "snap"; tick: number; ack: number; phase: Phase; clock: number; cars: number[][] };
@@ -82,13 +84,15 @@ export type Results = { t: "results"; rows: ResultRow[] };
 export type Wing = { t: "wing"; car: number };
 /** The marshals put a stuck car back on the racing line. */
 export type Reset = { t: "reset"; car: number };
+/** A car was penalised: ms added, why ("jump" = moved off the slot under the lights). */
+export type Pen = { t: "pen"; car: number; ms: number; why: string };
 /** A car's damage changed (contact, wall, repaired on the grid). */
 export type Dmg = { t: "dmg"; car: number } & WireDamage;
 export type Notice = { t: "notice"; msg: string; code?: string };
 export type ErrorMsg = { t: "error"; msg: string; code?: string };
 export type Pong = { t: "pong"; ts: number };
 export type ChatMsg = { t: "chat"; from: number; id: number };
-export type ServerMsg = Welcome | Snap | Grid | Lights | Lap | Results | Wing | Reset | Dmg | Notice | ErrorMsg | Pong | ChatMsg;
+export type ServerMsg = Welcome | Snap | Grid | Lights | Lap | Results | Wing | Reset | Pen | Dmg | Notice | ErrorMsg | Pong | ChatMsg;
 
 /** Notice codes (protocol.NoticeCodes) and Pitlane's refusal code. */
 export const NOTICE_CODES = ["not_creator", "not_grid"] as const;
@@ -143,7 +147,7 @@ const SERVER: Record<ServerMsg["t"], Check> = {
   welcome: shape(
     {
       you: int, code: str, car: int, handling: oneOf("arcade", "sim"), contact: oneOf("ghost", "soft", "full"), laps: int, track: str, creator: bool,
-      setup, dmg: shape(DAMAGE),
+      setup, dmg: shape(DAMAGE), pen: int,
     },
     { tok: str },
   ),
@@ -154,6 +158,7 @@ const SERVER: Record<ServerMsg["t"], Check> = {
   results: shape({ rows: listOf(shape({ pos: int, id: int, name: str, laps: int, total: int, best: int, penalty: int })) }),
   wing: shape({ car: int }),
   reset: shape({ car: int }),
+  pen: shape({ car: int, ms: int, why: str }),
   dmg: shape({ car: int, ...DAMAGE }),
   notice: shape({ msg: str }, { code: str }),
   error: shape({ msg: str }, { code: str }),

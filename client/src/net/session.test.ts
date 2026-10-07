@@ -72,7 +72,7 @@ const XQ = Math.round(X * 100), ZQ = Math.round(Z * 100);
 
 const WELCOME = {
   t: "welcome", you: 7, code: "K3FQ", car: 4, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: true,
-  setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 },
+  setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 }, pen: 0,
 };
 const snap = (tick: number, ack: number, phase = "racing") => ({
   t: "snap", tick, ack, phase, clock: 0,

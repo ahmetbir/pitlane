@@ -24,6 +24,7 @@ export class RaceState {
   private phase: Phase | null = null;
   private ownRow: CarRow | null = null;
   private ownHint = -1;
+  private penMs = 0;  // the own car's penalty this race (welcome, then each pen)
   private seat = 0;  // car id of the latest welcome
   private clock = 0; // of the latest running snapshot
   private rows: CarRow[] = [];
@@ -59,6 +60,10 @@ export class RaceState {
           this.ownRow = null;
         }
         this.seat = m.car;
+        this.penMs = m.pen;
+        break;
+      case "pen":
+        if (m.car === this.own()) this.penMs += m.ms;
         break;
       case "results":
         this.standings.final(m.rows.map((r) => r.id));
@@ -78,6 +83,7 @@ export class RaceState {
   private snap(phase: Phase, clock: number, rows: CarRow[]): void {
     const prev = this.phase;
     this.phase = phase;
+    if (phase === "grid") this.penMs = 0; // the server clears penalties at the grid
     this.rows = rows;
     this.ownRow = rows.find((r) => r.id === this.own()) ?? null;
     if (!running(phase)) return;
@@ -117,6 +123,7 @@ export class RaceState {
       finished: this.ownRow?.finished ?? false,
       wrongWay: this.phase === "racing" && st !== null && this.wrongWay(st),
       offTrack: running(this.phase) && (this.ownRow?.offTrack ?? false),
+      penMs: this.penMs,
     };
   }
 

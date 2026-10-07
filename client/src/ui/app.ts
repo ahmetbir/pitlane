@@ -205,6 +205,13 @@ export function play(o: PlayOpts): void {
           view?.snapCamera();
         }
         break;
+      case "pen":
+        if (m.why !== "jump") break;
+        if (m.car === car) {
+          hud.penalty(m.ms);
+          audio.penalty();
+        } else hud.toast(t("hud.jumpOther", { name: race?.nameOf(m.car) ?? `#${m.car}` }));
+        break;
       case "wing":
         if (m.car === car) hud.toast(t("hud.wing"));
         break;
