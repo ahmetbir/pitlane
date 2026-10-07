@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CarRow } from "../net/protocol.ts";
 import { rng } from "./drive.test-helper.ts";
-import { mixRow, Others } from "./others.ts";
+import { lead, MAX_LEAD_MS, mixRow, Others } from "./others.ts";
 
 const TICK_MS = 1000 / 60;
 const V = 30; // m/s along x
@@ -131,4 +131,20 @@ test("a marshal reset is drawn as a jump, not a slide, under latency and jitter"
       assert.equal(drawn[300], 4);
     }
   }
+});
+
+test("lead carries a car forward along its heading and yaw; sample clamps the lead", () => {
+  const row = { id: 2, x: 0, z: 0, h: Math.PI / 2, vx: 80, vy: 0, r: 0.5, delta: 0 } as unknown as CarRow;
+  const l = lead(row, 0.15);
+  assert.ok(Math.abs(l.x) < 1e-9 && Math.abs(l.z - 12) < 1e-9, "80 m/s for 150 ms along +z");
+  assert.ok(Math.abs(l.h - (Math.PI / 2 + 0.075)) < 1e-12);
+  assert.equal(lead(row, 0), row);
+  assert.equal(lead(row, NaN), row);
+  const o = new Others();
+  for (let i = 0; i < 20; i++) o.push(i, [{ ...row, z: i * 80 / 60 }], 1000 + i * 1000 / 60);
+  const now = 1000 + 20 * 1000 / 60;
+  const base = o.sample(now)[0].z;
+  assert.ok(Math.abs(o.sample(now, 150)[0].z - base - 12) < 1e-6);
+  assert.ok(Math.abs(o.sample(now, 10_000)[0].z - base - 80 * MAX_LEAD_MS / 1000) < 1e-6, "lead is capped");
+  assert.equal(o.sample(now, -50)[0].z, base);
 });

@@ -6,8 +6,8 @@
 
 import { Socket, type Env, type Join, type Quick, type Status } from "roomkit/net/socket";
 import type { ShaperPolicy } from "roomkit/net/shaper";
-import { clampSetup, defaultSetup, parseHandling, type Handling, type Input, type Setup } from "../car/car.ts";
-import { Others } from "../predict/others.ts";
+import { clampSetup, defaultSetup, DT, parseHandling, type Handling, type Input, type Setup } from "../car/car.ts";
+import { INTERP_DELAY_MS, Others } from "../predict/others.ts";
 import { Own, type OwnEnv, type OwnState } from "../predict/own.ts";
 import type { Track } from "../track/track.ts";
 import { damageOf, decodeCar, decodeServer, VERSION, wireInput, type CarRow, type ClientMsg, type Create, type Phase, type ServerMsg } from "./protocol.ts";
@@ -124,9 +124,13 @@ export class Session {
     return this.drawn;
   }
 
-  /** The other cars as drawn at this moment, 100 ms behind the server. */
+  /**
+   * The other cars as drawn at this moment: interpolated 100 ms behind the
+   * server, then carried forward to the own car's predicted time, so cars
+   * that touch on screen touch on the server.
+   */
   otherCars(): CarRow[] {
-    return this.others.sample(this.now());
+    return this.others.sample(this.now(), INTERP_DELAY_MS + this.own.ahead() * DT * 1000);
   }
 
   retry(): void {

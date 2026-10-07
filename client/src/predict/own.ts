@@ -154,6 +154,11 @@ export class Own {
     return this.r.render(dtS);
   }
 
+  /** World ticks the prediction runs ahead of the latest snapshot. */
+  ahead(): number {
+    return this.r.ahead();
+  }
+
   /** Unacknowledged inputs kept for replay. */
   pendingCount(): number {
     return this.r.pendingCount();

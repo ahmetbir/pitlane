@@ -1,6 +1,10 @@
-// Other cars: snapshot rows drawn 100 ms behind the server through roomkit's
-// InterpBuffer: positions and velocities lerped, heading along the shortest
-// arc, discrete fields (lap, flags) from the nearer snapshot. A teleport is
+// Other cars: snapshot rows interpolated 100 ms behind the server through
+// roomkit's InterpBuffer (positions and velocities lerped, heading along the
+// shortest arc, discrete fields from the nearer snapshot), then carried
+// forward by their own velocity to the own car's predicted time (sample's
+// lead): the own car is drawn ahead of the server, and a car drawn in the past
+// beside it is metres behind where the server has it (12 m at 80 m/s and
+// 150 ms), so a hit would show seconds after the cars seemed to touch. A teleport is
 // drawn as one: any move above 8 m between snapshots (back to the grid), and
 // a marshal reset ("reset" message), whose move may be short.
 
@@ -9,6 +13,8 @@ import type { CarRow } from "../net/protocol.ts";
 import { angleDiff } from "./own.ts";
 
 export const INTERP_DELAY_MS = 100;
+/** Longest lead a car is carried forward by (a stalled connection is not extrapolated further). */
+export const MAX_LEAD_MS = 250;
 const TICK_MS = 1000 / 60;
 const JUMP_M = 8;  // a move this long between snapshots is never slid along
 const CUT_M = 0.5; // a reset car stood still (< 1 m/s), so a move this long between its snapshots is the reset
@@ -23,6 +29,18 @@ export function mixRow(a: CarRow, b: CarRow, u: number): CarRow {
     ...near,
     x: l(a.x, b.x), z: l(a.z, b.z), h: a.h + angleDiff(b.h, a.h) * u,
     vx: l(a.vx, b.vx), vy: l(a.vy, b.vy), r: l(a.r, b.r), delta: l(a.delta, b.delta),
+  };
+}
+
+/** row carried forward by s seconds along its world velocity, turning at its yaw rate. */
+export function lead(row: CarRow, s: number): CarRow {
+  if (!(s > 0)) return row;
+  const c = Math.cos(row.h), sn = Math.sin(row.h);
+  return {
+    ...row,
+    x: row.x + (row.vx * c - row.vy * sn) * s,
+    z: row.z + (row.vx * sn + row.vy * c) * s,
+    h: row.h + row.r * s,
   };
 }
 
@@ -91,13 +109,14 @@ export class Others {
     this.cars.get(id)?.reset();
   }
 
-  /** Every car as drawn at local nowMs, by id. */
-  sample(nowMs: number): CarRow[] {
+  /** Every car as drawn at local nowMs, by id, carried forward by leadMs (0 … MAX_LEAD_MS). */
+  sample(nowMs: number, leadMs = 0): CarRow[] {
     const at = this.clock.renderTime(nowMs);
+    const ahead = Math.min(Math.max(Number.isFinite(leadMs) ? leadMs : 0, 0), MAX_LEAD_MS) / 1000;
     const out: CarRow[] = [];
     for (const c of this.cars.values()) {
       const s = c.buf.sample(at);
-      if (s) out.push(s);
+      if (s) out.push(lead(s, ahead));
     }
     return out.sort((p, q) => p.id - q.id);
   }
