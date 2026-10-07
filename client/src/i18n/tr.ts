@@ -219,7 +219,8 @@ export const TR = {
   "settings.unbound": "—",
   "settings.resetKeys": "Tuşları varsayılana döndür",
   "settings.gamepad": "Gamepad (değiştirilemez)",
-  "settings.slot": "{action}: {n}. tuş",
+  "settings.slot": "{action}: {n}. tuş, {key}",
+  "settings.none": "boş",
 
   "key.space": "Boşluk",
   "key.shiftLeft": "Sol Shift",

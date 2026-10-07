@@ -13,6 +13,12 @@ import { focusFirst, page, seg } from "./widgets.ts";
 /** The key table; edits s.keys in place and stores it. */
 function keysEditor(s: Settings): HTMLElement {
   const body = h("tbody");
+  // The slots' aria-labels name the key; this region tells a screen reader what a click started.
+  const live = h("p", { class: "sr-only", "aria-live": "polite" });
+  const slotLabel = (a: Action, i: number) => {
+    const code = s.keys[a][i];
+    return t("settings.slot", { action: actionName(a), n: i + 1, key: code ? keyName(code) : t("settings.none") });
+  };
   let capture: { action: Action; slot: number; btn: HTMLButtonElement } | null = null;
 
   const stop = () => {
@@ -32,6 +38,7 @@ function keysEditor(s: Settings): HTMLElement {
     if (e.code === "Escape") {
       stop();
       render(action, slot);
+      text(live, "");
       return;
     }
     if (e.code === "Backspace" || e.code === "Delete") s.keys = unbind(s.keys, action, slot);
@@ -40,6 +47,7 @@ function keysEditor(s: Settings): HTMLElement {
     saveSettings(s);
     stop();
     render(action, slot);
+    text(live, slotLabel(action, slot));
   };
 
   /** Re-renders the rows; fa, fs: the slot to focus after (the one just edited). */
@@ -48,7 +56,7 @@ function keysEditor(s: Settings): HTMLElement {
       h("th", { scope: "row" }, actionName(a)),
       ...Array.from({ length: SLOTS }, (_, i) => {
         const code = s.keys[a][i];
-        const btn = h("button", { type: "button", class: "keycap", "aria-label": t("settings.slot", { action: actionName(a), n: i + 1 }) }, code ? keyName(code) : t("settings.unbound"));
+        const btn = h("button", { type: "button", class: "keycap", "aria-label": slotLabel(a, i) }, code ? keyName(code) : t("settings.unbound"));
         btn.addEventListener("click", () => {
           if (capture) {
             const prev = capture;
@@ -59,6 +67,7 @@ function keysEditor(s: Settings): HTMLElement {
           btn.dataset.label = btn.textContent ?? "";
           text(btn, t("settings.press"));
           btn.classList.add("listening");
+          text(live, `${actionName(a)}: ${t("settings.press")}`);
           capture = { action: a, slot: i, btn };
           window.addEventListener("keydown", onKey, true);
         });
@@ -76,7 +85,7 @@ function keysEditor(s: Settings): HTMLElement {
     render();
   });
   return h("div", { class: "keys-editor" },
-    h("p", { class: "muted hint" }, t("settings.keysHint")),
+    h("p", { class: "muted hint" }, t("settings.keysHint")), live,
     h("div", { class: "table-wrap" }, h("table", { class: "table keys" }, body)),
     h("div", { class: "actions start" }, reset),
     h("h3", { class: "label" }, t("settings.gamepad")),

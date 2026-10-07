@@ -222,7 +222,8 @@ export const EN: Area<typeof TR> = {
   "settings.unbound": "—",
   "settings.resetKeys": "Reset keys to default",
   "settings.gamepad": "Gamepad (fixed)",
-  "settings.slot": "{action}: key {n}",
+  "settings.slot": "{action}: key {n}, {key}",
+  "settings.none": "none",
 
   "key.space": "Space",
   "key.shiftLeft": "Left Shift",
