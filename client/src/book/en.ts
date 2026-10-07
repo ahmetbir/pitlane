@@ -31,7 +31,7 @@ const controls = ({ keys }: BookCtx) => [
   sub("Gamepad"),
   p(`Any gamepad with the standard mapping works (Xbox, PlayStation and the like). The moment you touch a trigger, button or stick the pad takes the car; leave it for ${F.padHoldS} s and the keyboard is back.`),
   padTable(),
-  sub("Changing the car while racing"),
+  sub("Changing settings while racing"),
   p("Four settings can be changed on the track; each press moves one step and the HUD readout lights the new value. Hardware settings (wings, gearing, suspension) change in the garage only."),
   list(
     [pairOf(keys, "bbBack", "bbFwd"), ": brake bias 1 % rearward / forward."],

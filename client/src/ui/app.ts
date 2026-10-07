@@ -79,7 +79,7 @@ export function play(o: PlayOpts): void {
   /** The player opens or closes the card (help key, ? button): it blocks driving while up. */
   const toggleCard = () => {
     autoCard = false;
-    card.toggle(keys);
+    card.toggle(keys, handling === "arcade");
   };
   const helpBtn = tool("?", t("hud.help"), toggleCard);
   const manualBtn = tool(t("hud.manual"), t("hud.manual"), () => book.open());
@@ -152,7 +152,7 @@ export function play(o: PlayOpts): void {
       render(true);
       if ((flow.view === "grid" || flow.view === "race") && flow.phase !== "lights" && !settings.seenControls && !card.isOpen()) {
         autoCard = true;
-        card.open(keys);
+        card.open(keys, false, handling === "arcade");
       }
     }
     if (autoCard && card.isOpen() && flow.phase === "lights") card.close(); // the start: the first-race card goes
@@ -210,7 +210,7 @@ export function play(o: PlayOpts): void {
         if (m.car === car) {
           hud.penalty(m.ms);
           audio.penalty();
-        } else hud.toast(t("hud.jumpOther", { name: race?.nameOf(m.car) ?? `#${m.car}` }));
+        } else hud.jumpOther(race?.nameOf(m.car) ?? `#${m.car}`);
         break;
       case "wing":
         if (m.car === car) hud.toast(t("hud.wing"));

@@ -66,5 +66,6 @@ test("the controls card folds the eight live keys into four pairs", () => {
   setLang("en", null);
   const rows = cardRows(defaultBindings());
   assert.equal(rows.length, ACTIONS.length - 4);
-  assert.deepEqual(rows.slice(-4), [["1 / 2", "TC − / + (while racing)"], ["3 / 4", "ABS − / + (while racing)"], ["5 / 6", "Brake bias ← / → (while racing)"], ["7 / 8", "Diff open / locked (while racing)"]]);
+  assert.deepEqual(cardRows(defaultBindings(), true).slice(-2).map(([k]) => k), ["5 / 6", "7 / 8"], "Arcade: no TC / ABS keys");
+  assert.deepEqual(rows.slice(-4), [["1 / 2", "TC − / + (while racing)"], ["3 / 4", "ABS − / + (while racing)"], ["5 / 6", "Brake bias rear / front (while racing)"], ["7 / 8", "Diff open / locked (while racing)"]]);
 });

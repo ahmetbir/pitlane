@@ -164,10 +164,13 @@ const CARD_PAIRS: readonly (readonly [LiveAction, LiveAction, Key])[] = [
   ["tcDown", "tcUp", "card.liveTc"], ["absDown", "absUp", "card.liveAbs"], ["bbBack", "bbFwd", "card.liveBb"], ["diffDown", "diffUp", "card.liveDiff"],
 ];
 
-/** The controls card's keyboard rows: the drive keys, then each live pair on one row ("1 / 2  TC − / +"). */
-export function cardRows(b: Bindings): KeyRow[] {
+/**
+ * The controls card's keyboard rows: the drive keys, then each live pair on one row ("1 / 2  TC − / +");
+ * arcade: the room fixes TC and ABS, so their pairs are left out.
+ */
+export function cardRows(b: Bindings, arcade = false): KeyRow[] {
   const drive = keyRows(b).filter((_, i) => !isLive(ACTIONS[i]));
-  const pairs = CARD_PAIRS.map(([lo, hi, label]): KeyRow => [`${keysLabel(b[lo])} / ${keysLabel(b[hi])}`, t(label)]);
+  const pairs = CARD_PAIRS.filter(([lo]) => !(arcade && (lo === "tcDown" || lo === "absDown"))).map(([lo, hi, label]): KeyRow => [`${keysLabel(b[lo])} / ${keysLabel(b[hi])}`, t(label)]);
   return [...drive, ...pairs];
 }
 

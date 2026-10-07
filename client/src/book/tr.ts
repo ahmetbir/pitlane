@@ -31,14 +31,14 @@ const controls = ({ keys }: BookCtx) => [
   sub("Gamepad"),
   p(`Standart eşlemeli her gamepad çalışır (Xbox, PlayStation ve benzerleri). Bir tetiğe, tuşa ya da çubuğa dokunduğun an gamepad arabayı alır; ${F.padHoldS} sn hiç dokunmazsan klavye geri gelir.`),
   padTable(),
-  sub("Yarışta arabayı değiştirmek"),
-  p("Dört ayar pistte değiştirilebilir; her basış bir kademe oynatır ve HUD'daki gösterge yeni değeri yakar. Donanım ayarları (kanatlar, vites, süspansiyon) yalnız garajda değişir."),
+  sub("Yarış sırasında ayar değiştirmek"),
+  p("Dört ayar pistte değiştirilebilir; her basış bir kademe oynatır ve HUD'daki gösterge yeni değeri vurgular. Donanım ayarları (kanatlar, vites, süspansiyon) yalnız garajda değişir."),
   list(
     [pairOf(keys, "bbBack", "bbFwd"), ": fren dengesi %1 arkaya / öne."],
     [pairOf(keys, "diffDown", "diffUp"), ": diferansiyel bir kademe daha açık / daha kilitli."],
     [pairOf(keys, "tcDown", "tcUp"), ": çekiş kontrolü bir seviye azalır / artar (Sim odalarında; Arcade'de sabit)."],
     [pairOf(keys, "absDown", "absUp"), ": ABS bir seviye azalır / artar (Sim odalarında; Arcade'de sabit)."],
-    ["Gamepad'de yön tuşları yapar: yukarı / aşağı fren dengesi, sol / sağ çekiş kontrolü. Değişiklik saklanır, sonraki yarış onunla başlar."],
+    ["Gamepad'de bunu yön tuşları yapar: yukarı / aşağı fren dengesi, sol / sağ çekiş kontrolü. Değişiklik saklanır, sonraki yarış onunla başlar."],
   ),
   sub("Fren ve geri vites"),
   list(
@@ -59,7 +59,7 @@ const handling = () => [
     [`Çekiş kontrolü hep açıktır. Pay Sim'in 3. seviyesiyle aynıdır (${F.arcadeTC()}), virajın arka lastikte bıraktığı tutuş üzerinden ölçülür.`],
     [`ABS hep açıktır, 1. seviyenin payıyla (${F.arcadeABS()}): her aksın freni virajın ona bıraktığı tutuşun içinde kalır, frenlerken de dönebilirsin.`],
     ["Denge yardımı arabanın kendi etrafında dönmesini sınırlar; direksiyon daha çabuk tepki verir ve hız arttıkça daha az kırılır."],
-    ["Direksiyon yardımı: tam kilitte bile ön lastiklerin tutuş tepesinden fazlası istenmez; direksiyonu daha çok çevirmek burnu dışarı kaydırmaz."],
+    ["Direksiyon yardımı: direksiyon sonuna kadar kırılsa bile ön lastiklerin tutuş sınırından fazlası istenmez; direksiyonu daha çok çevirmek burnu dışarı kaydırmaz."],
   ),
   sub("Sim"),
   list(
@@ -125,7 +125,7 @@ const race = () => [
   figure(lightsArt(), "Işıklar birer saniye arayla yanar; hepsi sönünce yarış başlar."),
   sub("Erken kalkış"),
   p(`Işıklar yanarken araban grid yerinden ${R.jumpStartM} m'den fazla kıpırdarsa toplam süreye ${R.jumpStartPenS} sn ceza eklenir. Fren basılıyken gaz vermek (kalkış tutuşu) arabayı kıpırdatmaz, ceza değildir.`),
-  p(`Olduğu anda kırmızı bir bant, "${F.jumpBanner()}", birkaç saniye görünür ve ${F.jumpBadge()} rozeti yarışın sonuna kadar HUD'da kalır; diğer sürücüler adınla kısa bir satır görür. Ceza sonuç tablosunda da görünür.`),
+  p(`Erken kalktığın anda kırmızı bir bant, "${F.jumpBanner()}", birkaç saniye görünür ve ${F.jumpBadge()} rozeti yarışın sonuna kadar HUD'da kalır; diğer sürücüler adınla kısa bir satır görür. Ceza sonuç tablosunda da görünür.`),
   sub("Turlar, sektörler ve geçerlilik"),
   list(
     ["Tur üç sektöre bölünür. HUD'da mor: odanın en hızlısı, yeşil: kendi en iyin, sarı: daha yavaş."],

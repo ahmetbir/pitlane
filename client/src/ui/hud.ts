@@ -19,6 +19,7 @@ const RPM_SHIFT = 12800; // the gearbox's upshift point
 const GO_MS = 1200;
 const LAUNCH_READY = launchRPM - 100; // the bar turns green: the hold is at its rpm
 const PEN_BANNER_MS = 4000; // the jump-start banner stays up this long
+const OTHER_MS = 3000; // others' jump-start line stays up this long (and groups names)
 const HOT_MS = 1500; // a live value just changed stays lit this long
 
 /** The live readout's setup indices, in display order. */
@@ -113,6 +114,10 @@ export class Hud {
   private readonly launch = h("span", { class: "launch-badge", hidden: true }, t("hud.launch"));
   private readonly penEl = h("span", { class: "pen-badge", hidden: true });
   private readonly penBanner = h("div", { class: "pen-banner", role: "alert" });
+  private readonly penOther = h("div", { class: "pen-other", role: "status" });
+  private readonly penStack = h("div", { class: "pen-stack" }, this.penBanner, this.penOther);
+  private jumpers: string[] = []; // other cars that jumped lately
+  private otherTimer: ReturnType<typeof setTimeout> | null = null;
   private penTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly launchHint = h("p", { class: "launch-hint" });
   private readonly hint = h("div", { class: "hint-banner", role: "status" });
@@ -142,7 +147,7 @@ export class Hud {
         this.rpmBar,
         this.liveEl,
         h("div", { class: "dash-tags" }, this.launch, this.penEl)),
-      this.penBanner, this.hint, this.toasts.el, this.lightsEl);
+      this.penStack, this.hint, this.toasts.el, this.lightsEl);
   }
 
   /** The text parts (~10 Hz). */
@@ -255,6 +260,19 @@ export class Hud {
     }, PEN_BANNER_MS);
   }
 
+  /** Another car jumped the start: the names of those within OTHER_MS are listed together ("N cars" past three). */
+  jumpOther(name: string): void {
+    this.jumpers.push(name);
+    text(this.penOther, this.jumpers.length > 3 ? t("hud.jumpMany", { n: this.jumpers.length }) : t("hud.jumpOther", { name: this.jumpers.join(", ") }));
+    this.penOther.classList.add("on");
+    if (this.otherTimer !== null) clearTimeout(this.otherTimer);
+    this.otherTimer = setTimeout(() => {
+      this.penOther.classList.remove("on");
+      this.jumpers = [];
+      this.otherTimer = null;
+    }, OTHER_MS);
+  }
+
   /** A short message in the middle of the screen. */
   toast(msg: string): void {
     this.toasts.show(msg);
@@ -265,6 +283,7 @@ export class Hud {
     if (this.goTimer !== null) clearTimeout(this.goTimer);
     if (this.hotTimer !== null) clearTimeout(this.hotTimer);
     if (this.penTimer !== null) clearTimeout(this.penTimer);
+    if (this.otherTimer !== null) clearTimeout(this.otherTimer);
   }
 
   private gapLine(el: HTMLElement, label: string, g: GapView | null): void {

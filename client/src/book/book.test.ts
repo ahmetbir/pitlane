@@ -105,7 +105,7 @@ test("the manual quotes the code's numbers", () => {
     assert.ok(handling.includes(`the default is ${defaultSetup()[ABS]}`), "Sim ABS default from the setup");
     assert.ok(garage.includes("Off … 3") && garage.includes("Arcade always runs at 1"), "the garage has its ABS section");
     for (const k of ["1 / 2", "3 / 4", "5 / 6", "7 / 8"]) assert.ok(controls.includes(k), `live keys ${k}`);
-    assert.ok(controls.includes("Changing the car while racing"));
+    assert.ok(controls.includes("Changing settings while racing"));
     const launch = textOf("kalkis");
     assert.ok(launch.includes(`${launchRPM} rpm`));
     const gain = zeroTo100(Handling.Arcade, 3) - zeroTo100(Handling.Arcade, 3, true);

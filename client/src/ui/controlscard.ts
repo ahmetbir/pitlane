@@ -38,8 +38,8 @@ export class ControlsCard {
     return !this.el.hidden;
   }
 
-  /** Shows the card for bindings b; focus: move the keyboard focus to it (not in a race). */
-  open(b: Bindings, focus = false): void {
+  /** Shows the card for bindings b; focus: move the keyboard focus to it (not in a race); arcade: the room is Arcade. */
+  open(b: Bindings, focus = false, arcade = false): void {
     const ok = h("button", { type: "button", class: "btn primary" }, t("card.gotIt"));
     ok.addEventListener("click", () => this.close());
     const manual = this.opts.manual ? h("button", { type: "button", class: "btn ghost" }, t("home.manual")) : null;
@@ -55,7 +55,7 @@ export class ControlsCard {
     fill(this.el, h("div", { class: "panel" },
       h("h2", { id: "controls-title" }, t("card.controls")),
       h("div", { class: "card-cols" },
-        h("section", {}, h("h3", {}, t("card.keyboard")), rows(cardRows(b))),
+        h("section", {}, h("h3", {}, t("card.keyboard")), rows(cardRows(b, arcade))),
         h("section", {}, h("h3", {}, t("card.gamepad")), rows(padRows()))),
       h("p", { class: "muted hint" }, t("card.again", { keys: b.help.length ? `${keysLabel(b.help)} / ?` : "?" })),
       h("div", { class: "actions" }, change, manual, ok)));
@@ -68,9 +68,9 @@ export class ControlsCard {
     if (focus) ok.focus();
   }
 
-  toggle(b: Bindings): void {
+  toggle(b: Bindings, arcade = false): void {
     if (this.isOpen()) this.close();
-    else this.open(b);
+    else this.open(b, false, arcade);
   }
 
   /** Closes, gives the focus back to what opened it with focus (the home page's Controls button). */
