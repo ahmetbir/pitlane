@@ -169,3 +169,16 @@ test("the corrected heading stays continuous with the predicted one across ±π"
   assert.ok(Math.abs(h - (2 * Math.PI - 3.1)) < 1e-9, `h ${h}`);
   assert.ok(Math.abs(own.render(0).h - 3.1) < 1e-9, "the drawn heading should start where it was");
 });
+
+test("a snapshot while reversing keeps gear R (no flash of 1)", () => {
+  const own = new Own(track, HANDLING, SETUP);
+  own.reset(rowOf(1, startState(300, 0)), 0, 0);
+  for (let i = 1; i <= 90; i++) own.push(i, { th: 100, br: 0, st: 0, rv: true }, { running: true });
+  const st = own.state();
+  assert.equal(st.gear, 0);
+  assert.ok(st.vx < -2);
+  own.reconcile(rowOf(1, st), 90, 90, { running: true }); // everything acknowledged: the row alone
+  assert.equal(own.state().gear, 0);
+  own.reconcile(rowOf(1, { ...st, vx: 3 }), 90, 91, { running: true }); // rolling forward: not reverse
+  assert.ok(own.state().gear >= 1);
+});

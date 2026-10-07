@@ -8,7 +8,9 @@
 // and rpm are kept from the prediction (rpm is recomputed by the next step,
 // ax only weights load transfer); the gear is the predicted one run through
 // the gearbox's own shift rule at the snapshot speed, so a corrected state
-// never sits in a gear the gearbox would not hold there. Snapshots are
+// never sits in a gear the gearbox would not hold there; reverse (gear 0)
+// is kept while the car is still slower than the reverse engage speed, so
+// the HUD never flashes "1" while backing up. Snapshots are
 // quantised, so after a correction prediction converges on the server
 // instead of matching it bit for bit.
 
@@ -24,6 +26,7 @@ const SNAP_M = 8;     // larger corrections are drawn at once
 // Gearbox thresholds of car.step.
 const SHIFT_UP = 12800;
 const SHIFT_DOWN = 8000;
+const REV_ENGAGE = 0.5; // car.step keeps the reverse gear (0) below this VX
 
 /** The predicted car: its state plus the seg hint moveCar carries between steps. */
 export type OwnState = State & { seg: number };
@@ -167,7 +170,7 @@ export class Own {
     return {
       x: row.x, z: row.z, h, hx: Math.cos(h), hz: Math.sin(h),
       vx: row.vx, vy: row.vy, r: row.r, delta: row.delta,
-      rpm: like.rpm, gear: this.gearAt(sv, like.gear), ax: like.ax, launch: like.launch,
+      rpm: like.rpm, gear: like.gear === 0 && row.vx < REV_ENGAGE ? 0 : this.gearAt(sv, like.gear), ax: like.ax, launch: like.launch,
       dmg: { ...this.dmg },
       seg: this.track.locate(row.x, row.z, like.seg).i,
     };
