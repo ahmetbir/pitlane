@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { defaultSetup, Handling, launchRPM, setupMax, setupMin, tcShares } from "../car/car.ts";
+import { defaultSetup, Handling, launchRPM, newParams, noDamage, setupMax, setupMin, tcShares } from "../car/car.ts";
 import { zeroTo100 } from "../car/measure.ts";
 import { setLang } from "../i18n/index.ts";
 import { defaultBindings, keyRows, padRows, rebind, type Bindings } from "../input/bindings.ts";
@@ -92,6 +92,8 @@ test("the manual quotes the code's numbers", () => {
     for (const share of tcShares.slice(1)) assert.ok(handling.includes(`${Math.round(share * 100)}%`), `share ${share}`);
     for (let tc = 0; tc <= 3; tc++) assert.ok(handling.includes(`${fixed(zeroTo100(Handling.Sim, tc), 2)} s`), `TC ${tc} 0–100`);
     assert.ok(handling.includes("grip 25% more"), "Arcade grip from the params");
+    assert.equal(newParams(Handling.Arcade, defaultSetup(), noDamage()).tcShare, tcShares[3], "Arcade TC: Sim level 3's share");
+    assert.ok(handling.includes(`share is Sim level 3's (${Math.round(tcShares[3] * 100)}%)`));
     const garage = textOf("garaj");
     assert.ok(garage.includes(`${setupMin[0]} … ${setupMax[0]}`) && garage.includes("50 : 50 … 70 : 30") && garage.includes("Off … 3"));
     assert.ok(garage.includes(`${defaultSetup()[2]} : ${100 - defaultSetup()[2]}`), "the default brake bias");

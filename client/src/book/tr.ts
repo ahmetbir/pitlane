@@ -11,13 +11,13 @@ const start = ({ keys }: BookCtx) => [
   list(
     [b("Hızlı yarış"), ": boş yeri olan bir odaya oturursun; yoksa yeni bir oda açılır (Arcade, yumuşak temas, 3 tur)."],
     [b("Oda kur"), `: sürüş modelini (Arcade ya da Sim), temas kuralını (hayalet, yumuşak, tam) ve tur sayısını (${F.laps}) sen seçersin. Oda listede görünmesin istersen kodu yalnız arkadaşlarına verirsin.`],
-    [b("Kodla katıl"), ": arkadaşının verdiği dört harfli kodu yaz ya da onun paylaştığı /r/KOD bağlantısını aç."],
+    [b("Kodla katıl"), ": arkadaşının verdiği dört karakterli kodu yaz ya da onun paylaştığı /r/KOD bağlantısını aç."],
   ),
   sub("Gridden ışıklara"),
   steps(
     ["Grid ekranında ", b("Garaj"), "'a gir ve ayarını yap. Her değişiklik bu tarayıcıda hemen saklanır."],
     [b("Hazırım"), "'a bas: ayarın sunucuya gider. Sonradan değiştirirsen ", b("Ayarı güncelle"), " ile yeniden gönder."],
-    [`Herkes hazır olunca, oda sahibi başlatınca ya da ilk pilot girdikten ${R.humanGridS} sn sonra ${R.lightCount} ışık birer birer yanar.`],
+    [`Herkes hazır olunca, oda sahibi başlatınca ya da ilk sürücü girdikten ${R.humanGridS} sn sonra ${R.lightCount} ışık birer birer yanar.`],
     ["Işıklar sönünce yarış başlar. Daha iyi bir kalkış için ", chord(keys, "launch", "throttle"), " ile devri tut (Kalkış bölümü)."],
   ),
   note("tip", `Yarış sürerken katılırsan son sıradaki botun arabasını devralırsın. Bağlantın koparsa ${R.reconnectS} sn içinde aynı arabaya, sıran ve turunla geri dönersin.`),
@@ -36,7 +36,7 @@ const controls = ({ keys }: BookCtx) => [
     [keyOf(keys, "brake"), " her zaman frendir."],
     [keyOf(keys, "brakeReverse"), ` araba ileri giderken frendir. Araba durunca (${F.stoppedVX()} m/sn ve altı) geri vitese geçer ve basılı tuttukça geri gidersin; geride en fazla yaklaşık ${F.revKmh} km/sa. HUD'da vites `, b("R"), " olur."],
     ["Gaz basılıyken ", keyOf(keys, "brakeReverse"), " geri vitese geçmez, fren olur. Dururken ikisi birlikte kalkış tutuşudur."],
-    ["Geri giderken direksiyon gerçek arabadaki gibi ters döner: arkayı sola atmak için sola çevir."],
+    ["Geri giderken direksiyon gerçek arabadaki gibidir: arkayı sola atmak için sola çevir."],
   ),
   sub("Kamera ve yardım"),
   p(keyOf(keys, "camera"), " takip ve kokpit kamerası arasında geçer (varsayılanı Ayarlar'dan seçersin). ", keyOf(keys, "lookBack"), " basılıyken arkaya bakarsın. Yarışta ", kbd(`${keysLabel(keys.help)} / ?`), " kontrol kartını açar."),
@@ -47,7 +47,7 @@ const handling = () => [
   sub("Arcade"),
   list(
     [`Lastikler ${F.arcadeGrip()} daha fazla tutar.`],
-    [`Çekiş kontrolü hep açıktır ve 3. seviyede çalışır (arka tutuşun ${F.arcadeTC()}'i); arka kaymaya başlarsa gazı ayrıca yarıya indirir.`],
+    [`Çekiş kontrolü hep açıktır. Pay Sim'in 3. seviyesiyle aynıdır (${F.arcadeTC()}), ama virajda arta kalan tutuştan değil, arka lastiğin bütün tutuşundan ölçülür; arka kaymaya başlarsa gazı ayrıca yarıya indirir.`],
     ["ABS: ön lastikler kayarken fren yumuşar, frenlerken de dönebilirsin."],
     ["Denge yardımı arabanın kendi etrafında dönmesini sınırlar; direksiyon daha çabuk tepki verir ve hız arttıkça daha az kırılır."],
   ),
@@ -99,7 +99,7 @@ const garage = () => [
 const race = () => [
   sub("Evreler"),
   list(
-    [b("Grid"), `: pilotlar ayarını yapıp hazır olur. Herkes hazır olunca, oda sahibi başlatınca ya da ilk pilottan ${R.humanGridS} sn sonra ışıklara geçilir.`],
+    [b("Grid"), `: sürücüler ayarını yapıp hazır olur. Herkes hazır olunca, oda sahibi başlatınca ya da ilk sürücüden ${R.humanGridS} sn sonra ışıklara geçilir.`],
     [b("Işıklar"), `: ${R.lightCount} ışık ${R.lightS} sn arayla yanar, sonra hepsi birlikte söner.`],
     [b("Yarış"), `: ${F.laps} tur. İlk tur gridden başlar; grid çizginin arkasındadır.`],
     [b("Bitiş"), `: ilk araba yarışı bitirince diğerleri içinde bulundukları turu tamamlar; en fazla ${R.finishWindowS} sn.`],
@@ -134,7 +134,7 @@ const contact = () => [
   sub("Hasar"),
   list(
     ["Darbe arabanın ön üçte birine gelirse ön kanada, arka üçte birine gelirse arka kanada, ortasına gelirse süspansiyona yazılır. Hafif sürtünmeler hasar vermez."],
-    [`Ön kanat hasarı önün bastırma kuvvetini azaltır. Hasar ${F.wingLost()}'ı geçerse kanat kopar, önde bastırma kuvvetinin yalnız ${F.lostWingCL()}'u kalır ve araba virajda önden kayar. HUD "Ön kanadın koptu!" der.`],
+    [`Ön kanat hasarı önün bastırma kuvvetini azaltır. Hasar sınırı aşınca kanat kopar (sınır: ${F.wingLost()}); önde kalan bastırma kuvveti: ${F.lostWingCL()}. Araba virajda önden kayar; HUD "Ön kanadın koptu!" der.`],
     ["Arka kanat hasarı arkanın bastırma kuvvetini azaltır: hızlı virajlarda arka hafifler."],
     [`Süspansiyon hasarı tutuşu en fazla ${F.suspLoss()} düşürür.`],
     ["Hasar yarış boyunca kalır; grid yeniden kurulunca araba onarılır."],
@@ -159,6 +159,7 @@ const launch = ({ keys }: BookCtx) => [
     ["Sim'de TC 1: TC zaten lastiği sınırına kadar kullandırdığı için kalkış ek bir şey kazandırmaz, zararı da yoktur."],
     ["Sim'de TC kapalı: kazanç yok; düzlükte en hızlısı budur, ama klavyeyle virajda tam gaz arkayı kaydırır."],
   ),
+  note("tip", "Sol Shift'i basılı tut ya da ", chord(keys, "brake", "throttle"), " kullan: Windows'ta Sağ Shift'i 8 saniye kadar basılı tutmak Filtre Tuşları'nı açabilir."),
   note("warn", `Işıklar yanarken frensiz gaz verirsen araba kıpırdar: ${R.jumpStartM} m sonra ${R.jumpStartPenS} sn ceza. Tablodaki süreler araba modelinde varsayılan ayarla ölçülür; yaklaşık ${F.launchRevS()} sn'lik devir hazırlığı dahil değildir.`),
 ];
 

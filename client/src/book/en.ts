@@ -11,7 +11,7 @@ const start = ({ keys }: BookCtx) => [
   list(
     [b("Quick race"), ": takes a free seat in a room, or opens a new one (Arcade, soft contact, 3 laps)."],
     [b("Create room"), `: you pick the handling (Arcade or Sim), the contact rule (ghost, soft, full) and the laps (${F.laps}). Keep it out of the list and give the code to your friends only.`],
-    [b("Join by code"), ": type the four-letter code a friend gave you, or open the /r/CODE link they shared."],
+    [b("Join by code"), ": type the four-character code a friend gave you, or open the /r/CODE link they shared."],
   ),
   sub("From the grid to the lights"),
   steps(
@@ -47,7 +47,7 @@ const handling = () => [
   sub("Arcade"),
   list(
     [`The tyres grip ${F.arcadeGrip()} more.`],
-    [`Traction control is always on at level 3 (${F.arcadeTC()} of the rear grip); when the rear starts to slide it also halves the throttle.`],
+    [`Traction control is always on. Its share is Sim level 3's (${F.arcadeTC()}), but measured on the whole rear grip rather than on what cornering leaves; when the rear starts to slide it also halves the throttle.`],
     ["ABS: the brakes ease off while the front tyres slide, so you can turn while braking."],
     ["A stability aid limits the car's rotation; the steering reacts faster and turns less the faster you go."],
   ),
@@ -134,7 +134,7 @@ const contact = () => [
   sub("Damage"),
   list(
     ["A hit on the front third of the car goes to the front wing, on the rear third to the rear wing, in the middle to the suspension. Light rubs do no damage."],
-    [`Front wing damage costs front downforce. Past ${F.wingLost()} the wing comes off: only ${F.lostWingCL()} of the front downforce is left and the car understeers in corners. The HUD says "Your front wing came off!".`],
+    [`Front wing damage costs front downforce. Past the limit the wing comes off (limit: ${F.wingLost()}); front downforce left: ${F.lostWingCL()}. The car understeers in corners; the HUD says "Your front wing came off!".`],
     ["Rear wing damage costs rear downforce: the rear goes light in fast corners."],
     [`Suspension damage costs up to ${F.suspLoss()} of the grip.`],
     ["Damage stays for the race; the car is repaired when the grid forms again."],
@@ -159,6 +159,7 @@ const launch = ({ keys }: BookCtx) => [
     ["Sim at TC 1: TC already lets the tyre work to its limit, so a launch adds nothing, and costs nothing."],
     ["Sim with TC off: no gain; this is the quickest on a straight, but full throttle in a corner on a keyboard slides the rear."],
   ),
+  note("tip", "Hold Left Shift, or use ", chord(keys, "brake", "throttle"), ": on Windows, holding Right Shift for about 8 seconds can turn on Filter Keys."),
   note("warn", `Throttle without the brake under the lights moves the car: ${R.jumpStartM} m and it is a ${R.jumpStartPenS} s penalty. The table's times are measured on the car model with the default setup; the rev-up of about ${F.launchRevS()} s is not included.`),
 ];
 

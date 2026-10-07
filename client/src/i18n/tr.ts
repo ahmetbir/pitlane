@@ -18,10 +18,10 @@ export const TR = {
   "lang.en": "English",
 
   "home.name": "Adın",
-  "home.namePh": "Pilot adı",
+  "home.namePh": "Sürücü adı",
   "home.quick": "Hızlı yarış",
   "home.quickHint": "Boş bir koltuğa otur; kalan yerleri botlar doldurur.",
-  "home.defaultName": "Pilot{n}",
+  "home.defaultName": "Sürücü{n}",
   "home.create": "Oda kur",
   "home.garage": "Garaj",
   "home.board": "Liderlik",
@@ -80,7 +80,7 @@ export const TR = {
   "rooms.handling": "Sürüş",
   "rooms.contact": "Temas",
   "rooms.laps": "Tur",
-  "rooms.humans": "Pilot",
+  "rooms.humans": "Sürücü",
   "rooms.phase": "Durum",
   "rooms.lap": "Tur",
 
@@ -143,7 +143,7 @@ export const TR = {
   "grid.isReady": "hazır",
   "grid.waiting": "bekliyor",
   "grid.creator": "Oda sahibi",
-  "grid.hint": "Herkes hazır olunca, oda sahibi başlatınca ya da ilk pilottan 30 sn sonra ışıklar yanar.",
+  "grid.hint": "Herkes hazır olunca, oda sahibi başlatınca ya da ilk sürücüden 30 sn sonra ışıklar yanar.",
   "grid.share": "Arkadaşını çağır: kod {code}",
 
   "hud.pos": "SIRA",
@@ -171,7 +171,7 @@ export const TR = {
 
   "results.title": "Sonuçlar",
   "results.pos": "Sıra",
-  "results.name": "Pilot",
+  "results.name": "Sürücü",
   "results.laps": "Tur",
   "results.total": "Toplam",
   "results.best": "En iyi tur",
@@ -189,7 +189,7 @@ export const TR = {
   "board.empty": "Henüz kayıt yok.",
   "board.off": "İstatistikler bu sunucuda kapalı.",
   "board.failed": "Tablo alınamadı.",
-  "board.name": "Pilot",
+  "board.name": "Sürücü",
   "board.winsCol": "Galibiyet",
   "board.podiums": "Podyum",
   "board.races": "Yarış",
