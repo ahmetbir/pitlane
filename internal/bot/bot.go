@@ -45,7 +45,7 @@ const (
 	turnWall = 2.0  // m: the turning circle keeps this far from the wall line
 
 	// Traffic.
-	passGap     = 4.0   // m beside the car being passed (soft-contact discs are 3.2 m across)
+	passGap     = 4.0   // m beside the car being passed (a car is 1.9 m wide)
 	passMin     = 3.5   // m: with less room than this beside it, follow instead
 	maxShift    = 12.0  // m: largest shift off the racing line
 	movingAX    = 0.5   // m/s²: a slow car accelerating harder than this is getting going, not standing

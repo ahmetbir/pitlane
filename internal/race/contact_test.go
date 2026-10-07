@@ -58,12 +58,12 @@ func TestGhostCarsPassThrough(t *testing.T) {
 func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	r := contactRace(Soft)
 	a, b := r.cars[0], r.cars[1]
-	put(r, a, 100, 1, 30)
-	put(r, b, 100, -1, 30)
+	put(r, a, 100, 0.8, 30)
+	put(r, b, 100, -0.8, 30)
 	va, vb := a.St.Speed(), b.St.Speed()
 	r.resolveContacts(nil)
 	d := math.Hypot(b.St.X-a.St.X, b.St.Z-a.St.Z)
-	if d < 2*softRadius-1e-9 {
+	if d < 2*boxHalfWid-1e-9 || overlapping(a, b) && d < 2*boxHalfWid-1e-6 {
 		t.Fatalf("still overlapping: %.4f m", d)
 	}
 	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) {
@@ -81,8 +81,8 @@ func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	t.Logf("separation %.4f m", d)
 
 	// Drifting into each other: the approaching normal velocity is removed.
-	put(r, a, 100, 1, 30)
-	put(r, b, 100, -1, 30)
+	put(r, a, 100, 0.8, 30)
+	put(r, b, 100, -0.8, 30)
 	b.St.VY = 2
 	r.resolveContacts(nil)
 	n := vec{a.St.X - b.St.X, a.St.Z - b.St.Z}
@@ -295,5 +295,56 @@ func TestWallDamageFullOnly(t *testing.T) {
 			t.Fatalf("full wall hit: %+v lost %v", a.St.Dmg, lost)
 		}
 		t.Logf("%v: wall at tick %d, damage %+v", mode, hit, a.St.Dmg)
+	}
+}
+
+// softGap places B behind A at nose-to-tail distance d (centres), both at the given speeds,
+// resolves one contact and returns B's speed before and after.
+func softGap(d, va, vb float64) (before, after float64, r *Race) {
+	r = contactRace(Soft)
+	a, b := r.cars[0], r.cars[1]
+	put(r, a, 100, 0, va)
+	put(r, b, 100, 0, vb)
+	b.St.X, b.St.Z = a.St.X-d*a.St.HX, a.St.Z-d*a.St.HZ
+	before = b.St.Speed()
+	r.resolveContacts(nil)
+	return before, b.St.Speed(), r
+}
+
+func TestSoftContactFollowsTheBoxes(t *testing.T) {
+	// Rear-end at 10 m/s relative: nothing at 6 m, contact once the boxes touch (5.4 m).
+	if before, after, _ := softGap(6, 30, 40); after != before {
+		t.Fatalf("contact at 6 m nose-to-tail: %.3f → %.3f", before, after)
+	}
+	if before, after, _ := softGap(5.3, 30, 40); after >= before {
+		t.Fatalf("no contact at 5.3 m nose-to-tail: %.3f → %.3f", before, after)
+	}
+	_, _, r := softGap(5.0, 30, 40)
+	a, b := r.cars[0], r.cars[1]
+	if overlapping(a, b) {
+		t.Fatal("boxes still overlap after resolution")
+	}
+	if d := math.Hypot(b.St.X-a.St.X, b.St.Z-a.St.Z); math.Abs(d-5.4) > 0.01 {
+		t.Fatalf("separated to %.3f m, want 5.4", d)
+	}
+	if a.St.R != 0 || b.St.R != 0 {
+		t.Fatal("soft contact spun a car")
+	}
+
+	// Side by side: contact at 1.8 m, none at 2.0 m.
+	for _, c := range []struct {
+		gap float64
+		hit bool
+	}{{1.8, true}, {2.0, false}} {
+		r := contactRace(Soft)
+		a, b := r.cars[0], r.cars[1]
+		put(r, a, 100, c.gap/2, 30)
+		put(r, b, 100, -c.gap/2, 30)
+		b.St.VY = 2
+		vy := b.St.VY
+		r.resolveContacts(nil)
+		if got := b.St.VY != vy; got != c.hit {
+			t.Fatalf("side by side at %.1f m: contact %v, want %v", c.gap, got, c.hit)
+		}
 	}
 }

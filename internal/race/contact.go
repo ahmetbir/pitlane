@@ -7,7 +7,6 @@ import (
 )
 
 const (
-	softRadius    = 1.6    // m, disc per car
 	softKeep      = 0.95   // speed kept per soft contact
 	fullCorrect   = 0.8    // share of the overlap removed per tick
 	restitution   = 0.25   // e
@@ -87,24 +86,20 @@ func (r *Race) resolveContacts(walls *[numCars]wallHit) []CarID {
 	return h.lost
 }
 
-// softPair: discs pushed apart, approaching normal velocity removed, 5 % speed lost.
+// softPair: overlapping boxes pushed apart along the separating normal (half the depth
+// each), approaching normal velocity removed, 5 % speed lost. No spin, no damage.
 func softPair(a, b *car.State) {
-	d := vec{b.X - a.X, b.Z - a.Z}
-	dist := d.len()
-	if dist >= 2*softRadius {
+	s, hit := satOBB(boxOf(a), boxOf(b))
+	if !hit {
 		return
 	}
-	n := vec{1, 0}
-	if dist > 0 {
-		n = d.scale(1 / dist)
-	}
-	push := n.scale((2*softRadius - dist) / 2)
+	push := s.n.scale(s.depth / 2)
 	a.X, a.Z = a.X-push.x, a.Z-push.z
 	b.X, b.Z = b.X+push.x, b.Z+push.z
 
 	va, vb := worldVel(a), worldVel(b)
-	if vn := vb.sub(va).dot(n); vn < 0 {
-		va, vb = va.add(n.scale(vn/2)), vb.sub(n.scale(vn/2))
+	if vn := vb.sub(va).dot(s.n); vn < 0 {
+		va, vb = va.add(s.n.scale(vn/2)), vb.sub(s.n.scale(vn/2))
 	}
 	setWorldVel(a, va.scale(softKeep))
 	setWorldVel(b, vb.scale(softKeep))
