@@ -112,6 +112,35 @@ func TestJumpStartPenalty(t *testing.T) {
 	}
 }
 
+// The next race starts clean: a second jump start is a new event and the penalty is 5000 again, not 10000.
+func TestJumpStartOnASecondStart(t *testing.T) {
+	r := newRace(3)
+	a, _ := r.Seat("a", "")
+	jump := func() (events int) {
+		r.Start(r.Creator())
+		for r.Phase() == Grid {
+			r.Step(nil)
+		}
+		for r.Phase() == Lights {
+			events += len(r.Step(map[CarID]car.Input{a: {Throttle: 1}}).JumpStart)
+		}
+		return events
+	}
+	if n := jump(); n != 1 || r.car(a).PenaltyMs != 5000 {
+		t.Fatalf("first start: %d events, penalty %d", n, r.car(a).PenaltyMs)
+	}
+	r.finishAllForTest()
+	for i := 0; i < 20*60 && r.Phase() != Grid; i++ {
+		r.Step(nil)
+	}
+	if r.Phase() != Grid || r.car(a).PenaltyMs != 0 {
+		t.Fatalf("phase %v penalty %d", r.Phase(), r.car(a).PenaltyMs)
+	}
+	if n := jump(); n != 1 || r.car(a).PenaltyMs != 5000 {
+		t.Fatalf("second start: %d events, penalty %d", n, r.car(a).PenaltyMs)
+	}
+}
+
 // Revving on the brake through the lights (the launch hold) keeps the car on
 // its slot: no jump-start penalty, the engine at the launch rpm.
 func TestLaunchHoldIsNoJumpStart(t *testing.T) {
