@@ -144,7 +144,9 @@ const limitRPM = 13500.0;
 const taperRPM = 13300.0;
 const clRearBase = 1.5;
 const simAlphaR = 0.11;
-const simAssistSlip = 0.6;
+const simRearShare = 0.85;
+const simRearMax = 0.8;
+const simRearBand = 0.15;
 const arcAlphaR = 0.15;
 const brakeMax = 30e3;
 const rollRes = 120.0;
@@ -277,6 +279,14 @@ export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
   };
 }
 
+/** Sim's steering allowance past the car's motion (port of car.simSlip). */
+function simSlip(st: State, p: Params, fzF: number, fzR: number): number {
+  const q = Math.min((simRearShare * (cgRear * fzR)) / (cgFront * fzF), 1);
+  const alpha = p.alphaF * ((1 - Math.sqrt(1 - q * q)) / q);
+  const rr = abs(st.vy - cgRear * st.r) / st.vx / p.alphaR;
+  return alpha * Math.min(Math.max((simRearMax - rr) / simRearBand, 0), 1);
+}
+
 /** Advances st by DT (port of car.Step). */
 export function step(st: State, p: Params, input: Input, env: Env): void {
   const inp = cleanInput(input);
@@ -290,16 +300,29 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     }
   }
 
-  // Steering: rate-limited toward the target (Arcade: speed-scaled; both: peak-slip capped).
+  // Normal loads: static + downforce ∓ longitudinal transfer.
+  const v2 = st.vx * st.vx + st.vy * st.vy;
+  const spd = Math.sqrt(v2);
+  const tr = p.transfer * st.ax;
+  const fzF = Math.max(p.fzF0 + p.aeroF * v2 - tr, minLoad * p.fzF0);
+  const fzR = Math.max(p.fzR0 + p.aeroR * v2 + tr, minLoad * p.fzR0);
+
+  // Steering: rate-limited toward the target (Arcade: speed-scaled; both: slip capped).
   let target = inp.steer * steerLock;
   if (p.assists) target = target / (1 + Math.max(st.vx, 0) / arcadeVX);
   if (st.vx > slipVX) {
-    // Steering assist (both handlings): no further than the front tyres' peak slip past the angle the car's motion already asks.
-    // Sim keeps a margin below the peak, or the rear lets go before the front does.
-    const alpha = p.assists ? p.alphaF : p.alphaF * simAssistSlip;
+    // Steering assist: no further than a slip allowance past the angle the car's motion already asks.
     const c = (st.vy + cgFront * st.r) / st.vx;
-    if (target > 0) target = Math.min(target, Math.max(c + alpha, 0));
-    else target = Math.max(target, Math.min(c - alpha, 0));
+    if (p.assists) {
+      // Arcade: the front tyres' peak slip; never against the driver.
+      if (target > 0) target = Math.min(target, Math.max(c + p.alphaF, 0));
+      else target = Math.max(target, Math.min(c - p.alphaF, 0));
+    } else if (target !== 0) {
+      // Sim: the allowance the rear can hold; the wheel may follow the car's motion past straight ahead.
+      const alpha = simSlip(st, p, fzF, fzR);
+      if (target > 0) target = Math.max(Math.min(target, c + alpha), -steerLock);
+      else target = Math.min(Math.max(target, c - alpha), steerLock);
+    }
   }
   const stp = p.steerRate * DT;
   st.delta += Math.min(Math.max(target - st.delta, -stp), stp);
@@ -318,13 +341,6 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     brk = Math.max(brk, thr);
     thr = 0;
   }
-
-  // Normal loads: static + downforce ∓ longitudinal transfer.
-  const v2 = st.vx * st.vx + st.vy * st.vy;
-  const spd = Math.sqrt(v2);
-  const tr = p.transfer * st.ax;
-  const fzF = Math.max(p.fzF0 + p.aeroF * v2 - tr, minLoad * p.fzF0);
-  const fzR = Math.max(p.fzR0 + p.aeroR * v2 + tr, minLoad * p.fzR0);
 
   // Engine and automatic gearbox; reverse (gear 0) has first gear's ratio.
   const sv = abs(st.vx);

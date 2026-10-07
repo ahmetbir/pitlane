@@ -15,27 +15,42 @@ func Step(st *State, p *Params, in Input, env Env) {
 		st.HX, st.HZ = 1, 0
 	}
 
-	// Steering: rate-limited toward the target (Arcade: speed-scaled; both: peak-slip capped).
+	// Normal loads: static + downforce ∓ longitudinal transfer.
+	v2 := float64(st.VX*st.VX) + float64(st.VY*st.VY)
+	spd := math.Sqrt(v2)
+	tr := float64(p.Transfer * st.AX)
+	fzF := max(p.FzF0+float64(p.AeroF*v2)-tr, float64(minLoad*p.FzF0))
+	fzR := max(p.FzR0+float64(p.AeroR*v2)+tr, float64(minLoad*p.FzR0))
+
+	// Steering: rate-limited toward the target (Arcade: speed-scaled; both: slip capped).
 	target := float64(in.Steer * steerLock)
 	if p.Assists {
 		target = target / (1 + max(st.VX, 0)/arcadeVX)
 	}
 	if st.VX > slipVX {
-		// Steering assist (both handlings): the wheel turns no further than
-		// the front tyres' peak slip, αpk past the angle the car's motion
-		// already asks ((VY + a·R)/VX), so full lock on a keyboard is the
-		// most the fronts can give, not a slide past it. It never steers
-		// against the driver.
-		alpha := p.AlphaF
-		if !p.Assists {
-			// Sim: a margin below the peak, or the rear lets go before the front does.
-			alpha = float64(p.AlphaF * simAssistSlip)
-		}
+		// Steering assist: the wheel turns no further than a slip allowance
+		// past the angle the car's motion already asks, c = (VY + a·R)/VX, so
+		// full lock on a keyboard is the most the fronts may give, not a slide
+		// past it.
 		c := (st.VY + float64(cgFront*st.R)) / st.VX
-		if target > 0 {
-			target = min(target, max(c+alpha, 0))
-		} else {
-			target = max(target, min(c-alpha, 0))
+		if p.Assists {
+			// Arcade: the front tyres' peak slip; never against the driver.
+			if target > 0 {
+				target = min(target, max(c+p.AlphaF, 0))
+			} else {
+				target = max(target, min(c-p.AlphaF, 0))
+			}
+		} else if target != 0 {
+			// Sim: the allowance the rear can hold (simSlip). When the rear
+			// slides, the wheel follows the car's motion, past straight ahead
+			// if the motion asks it (a countersteer), so the front stops
+			// adding yaw the rear cannot take.
+			alpha := simSlip(st, p, fzF, fzR)
+			if target > 0 {
+				target = max(min(target, c+alpha), -steerLock)
+			} else {
+				target = min(max(target, c-alpha), steerLock)
+			}
 		}
 	}
 	step := float64(p.SteerRate * DT)
@@ -59,13 +74,6 @@ func Step(st *State, p *Params, in Input, env Env) {
 	if in.Reverse && !rev {
 		thr, brk = 0, max(brk, thr)
 	}
-
-	// Normal loads: static + downforce ∓ longitudinal transfer.
-	v2 := float64(st.VX*st.VX) + float64(st.VY*st.VY)
-	spd := math.Sqrt(v2)
-	tr := float64(p.Transfer * st.AX)
-	fzF := max(p.FzF0+float64(p.AeroF*v2)-tr, float64(minLoad*p.FzF0))
-	fzR := max(p.FzR0+float64(p.AeroR*v2)+tr, float64(minLoad*p.FzR0))
 
 	// Engine and automatic gearbox; reverse (gear 0) has first gear's ratio.
 	sv := abs(st.VX)
@@ -237,6 +245,20 @@ func Step(st *State, p *Params, in Input, env Env) {
 	wz := float64(st.VX*st.HZ) + float64(st.VY*st.HX)
 	st.X += float64(wx * DT)
 	st.Z += float64(wz * DT)
+}
+
+// simSlip is Sim's steering allowance past the car's motion. In a steady turn
+// the axles' side forces balance about the CG (a·Fyf = b·Fyr), so the fronts
+// may take at most simRearShare of the force the rear's grip can balance:
+// curve(s) = q = simRearShare·b·FzR / (a·FzF) (capped at the peak, 1), whose
+// slip is s = (1 − √(1 − q²))/q. The allowance then fades to none as the rear
+// slip rises from simRearMax − simRearBand to simRearMax of its peak: the rear
+// is kept on the rising side of its curve, where it still holds the car.
+func simSlip(st *State, p *Params, fzF, fzR float64) float64 {
+	q := min(float64(simRearShare*float64(cgRear*fzR))/float64(cgFront*fzF), 1)
+	alpha := float64(p.AlphaF * ((1 - math.Sqrt(1-float64(q*q))) / q))
+	rr := abs(st.VY-float64(cgRear*st.R)) / st.VX / p.AlphaR
+	return float64(alpha * min(max((simRearMax-rr)/simRearBand, 0), 1))
 }
 
 // torque interpolates the engine table: flat below idle, tapering linearly to

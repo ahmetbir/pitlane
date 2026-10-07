@@ -1,6 +1,7 @@
 package car
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -284,7 +285,7 @@ func TestDiffTradesTractionForCornering(t *testing.T) {
 	if lo, hi := accel(1), accel(10); hi > lo {
 		t.Fatalf("20→40 m/s: diff 1 %.3f s, diff 10 %.3f s", lo, hi)
 	}
-	// The steering cap keeps the fronts at their peak, so the diff shows only at the rear's
+	// The steering assist keeps the fronts near their peak, so the diff shows only at the rear's
 	// limit: at 30 m/s and throttle 0.6 a locked diff holds less corner than an open one.
 	held := func(diff int) float64 {
 		best := 0.0
@@ -916,6 +917,75 @@ func TestFullLockYawNearBest(t *testing.T) {
 			if full < 0.95*best {
 				t.Errorf("%v %.0f m/s: full lock yaw %.3f rad/s is %.0f %% of the best %.3f", h, v, full, full/best*100, best)
 			}
+		}
+	}
+}
+
+// Sim keyboard full lock never spins the car, whatever the setup: from
+// settled straight running at 30/50/70 m/s, steer ramped to 1 at the
+// keyboard's 3/s and held 4 s, throttle off and full (default TC), over front
+// wing × rear wing × suspension balance × diff extremes plus half a rear wing
+// and a lost front wing. The side slip stays below |VY|/VX 0.35 and the yaw
+// rate never turns against the steer. (With the cap at 0.6 × the front αpk,
+// low rear wing spun the car from 30 m/s.)
+func TestSimFullLockNeverSpins(t *testing.T) {
+	type run struct {
+		name string
+		s    Setup
+		d    Damage
+	}
+	var runs []run
+	for _, fw := range []int{1, 6, 11} {
+		for _, rw := range []int{1, 6, 11} {
+			for _, sb := range []int{1, 5, 9} {
+				for _, df := range []int{1, 10} {
+					s := DefaultSetup()
+					s[FrontWing], s[RearWing], s[SuspBalance], s[Diff] = fw, rw, sb, df
+					runs = append(runs, run{fmt.Sprintf("FW %d RW %d susp %d diff %d", fw, rw, sb, df), s, Damage{}})
+				}
+			}
+		}
+	}
+	runs = append(runs, run{"rear wing damage 0.5", DefaultSetup(), Damage{RearWing: 0.5}},
+		run{"front wing lost", DefaultSetup(), Damage{FrontWing: 1}})
+	for _, v := range []float64{30, 50, 70} {
+		for _, gas := range []bool{false, true} {
+			worstSlip, minR, worst := 0.0, math.Inf(1), ""
+			for _, r := range runs {
+				p := NewParams(Sim, r.s, r.d)
+				st := settled(&p, v, 0)
+				k := keyboard{}
+				if gas {
+					k.thr = 1
+				}
+				slip, lowR := 0.0, math.Inf(1)
+				for range 240 {
+					Step(&st, &p, k.input(true, gas), asphalt)
+					slip = max(slip, math.Abs(st.VY)/max(st.VX, 1))
+					lowR = min(lowR, st.R)
+				}
+				if slip > worstSlip {
+					worstSlip, worst = slip, r.name
+				}
+				minR = min(minR, lowR)
+				if slip >= 0.35 || lowR < 0 {
+					t.Errorf("%.0f m/s gas %v %s: max |VY|/VX %.3f, min yaw rate %.4f rad/s", v, gas, r.name, slip, lowR)
+				}
+			}
+			t.Logf("%.0f m/s gas %v: worst |VY|/VX %.3f (%s), min yaw rate %.4f rad/s", v, gas, worstSlip, worst, minR)
+		}
+	}
+}
+
+// The Sim assist keeps full lock at least as tight as the 0.6 × αpk cap it
+// replaced on the default setup (0.414/0.390/0.430 rad/s at 30/50/70 m/s).
+func TestSimFullLockTurnsTight(t *testing.T) {
+	p := NewParams(Sim, DefaultSetup(), Damage{})
+	for _, c := range []struct{ v, min float64 }{{30, 0.414}, {50, 0.390}, {70, 0.430}} {
+		r := math.Abs(settled(&p, c.v, 1).R)
+		t.Logf("%.0f m/s: full lock %.3f rad/s", c.v, r)
+		if r < c.min {
+			t.Errorf("%.0f m/s: full lock %.3f rad/s, want ≥ %.3f", c.v, r, c.min)
 		}
 	}
 }
