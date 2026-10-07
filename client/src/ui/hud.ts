@@ -1,8 +1,10 @@
 // The race HUD: position, lap, lap times with the live delta, gaps to the
-// cars ahead and behind, sector colours, speed, gear and the rpm bar, the
-// start lights, hints (wrong way, off track), toasts and the mini-map.
+// cars ahead and behind, sector colours, speed, gear (R in reverse), the rpm
+// bar, the traction control level, the launch indicator, the start lights
+// with the launch hint, hints (wrong way, off track), toasts and the mini-map.
 // Texts update at ~10 Hz (text()); the gauges and the map every frame.
 import { h, text } from "roomkit/ui/dom";
+import { launchRPM } from "../car/car.ts";
 import { t } from "../i18n/index.ts";
 import type { Gap, SectorColour } from "../timing/standings.ts";
 import { fmtDelta, fmtGap, fmtLap, fmtTime, kmh } from "./fmt.ts";
@@ -13,6 +15,7 @@ const RPM_IDLE = 4000;
 const RPM_LIMIT = 13500;
 const RPM_SHIFT = 12800; // the gearbox's upshift point
 const GO_MS = 1200;
+const LAUNCH_READY = launchRPM - 100; // the bar turns green: the hold is at its rpm
 
 export type GapView = { name: string; gap: Gap };
 
@@ -32,6 +35,21 @@ export function lapOf(done: number, laps: number): number {
 /** A gap's text: "1.2" seconds, or "+1 lap" when lapped. */
 export function gapText(g: Gap): string {
   return g.laps > 0 ? t("hud.lapsDown", { n: g.laps }) : fmtGap(g.ms);
+}
+
+/** The gear's label: "R" for reverse (gear 0). */
+export function gearLabel(gear: number): string {
+  return gear === 0 ? "R" : String(gear);
+}
+
+/** Whether a launch hold's engine is at the launch rpm (the bar turns green). */
+export function launchReady(rpm: number): boolean {
+  return rpm >= LAUNCH_READY;
+}
+
+/** The TC badge: "TC 2", "TC OFF". */
+export function tcBadge(level: number): string {
+  return level > 0 ? `TC ${level}` : t("hud.tcOff");
 }
 
 /** Rpm as the bar's fill 0..1. */
@@ -59,22 +77,27 @@ export class Hud {
   private readonly speed = h("span", { class: "speed mono" });
   private readonly gear = h("span", { class: "gear mono" });
   private readonly rpm = h("i", { class: "rpm-fill" });
+  private readonly rpmBar = h("div", { class: "rpm" }, this.rpm);
+  private readonly tc = h("span", { class: "tc-badge" });
+  private readonly launch = h("span", { class: "launch-badge", hidden: true }, t("hud.launch"));
+  private readonly launchHint = h("p", { class: "launch-hint" });
   private readonly hint = h("div", { class: "hint-banner", role: "status" });
   private readonly toasts = new Toast();
   private readonly lamps = [0, 1, 2, 3, 4].map(() => h("i", { class: "lamp" }));
   private readonly lightsEl: HTMLElement;
   private readonly go = h("div", { class: "go" });
   private goTimer: ReturnType<typeof setTimeout> | null = null;
-  private shiftLit = false;
   private lastSpeed = -1;
   private lastGear = -1;
+  private bar = ""; // the rpm bar's state class: "", "shift", "launch", "ready"
 
-  /** leave: the Leave button, placed in the top-left panel. */
-  constructor(outline: readonly XZ[], leave: HTMLElement) {
+  /** tools: the buttons of the top-left panel (Leave, controls, manual); launchHint: the lights' hint text. */
+  constructor(outline: readonly XZ[], tools: readonly HTMLElement[], launchHint: string) {
     this.map = new MiniMap(outline);
-    this.lightsEl = h("div", { class: "lights", hidden: true }, h("div", { class: "lamps" }, ...this.lamps), this.go);
+    text(this.launchHint, launchHint);
+    this.lightsEl = h("div", { class: "lights", hidden: true }, h("div", { class: "lamps" }, ...this.lamps), this.go, this.launchHint);
     this.el = h("div", { class: "hud", "aria-live": "off" },
-      h("div", { class: "hud-tl" }, cell(t("hud.pos"), this.pos), cell(t("hud.lap"), this.lap), leave),
+      h("div", { class: "hud-tl" }, cell(t("hud.pos"), this.pos), cell(t("hud.lap"), this.lap), h("div", { class: "hud-tools" }, ...tools)),
       h("div", { class: "hud-tr" },
         h("div", { class: "times" }, cell(t("hud.time"), this.cur), this.delta, cell(t("hud.last"), this.last), cell(t("hud.best"), this.best)),
         h("div", { class: "sectors" }, ...this.sectors),
@@ -82,7 +105,8 @@ export class Hud {
       h("div", { class: "hud-bl" }, this.map.el),
       h("div", { class: "hud-bc" },
         h("div", { class: "dash" }, this.speed, h("span", { class: "unit" }, t("hud.kmh")), h("span", { class: "gear-box" }, h("span", { class: "k" }, t("hud.gear")), this.gear)),
-        h("div", { class: "rpm" }, this.rpm)),
+        this.rpmBar,
+        h("div", { class: "dash-tags" }, this.tc, this.launch)),
       this.hint, this.toasts.el, this.lightsEl);
   }
 
@@ -105,8 +129,17 @@ export class Hud {
     this.hint.className = `hint-banner ${hint ? "on" : ""} ${v.wrongWay && !v.finished ? "warn" : ""}`;
   }
 
-  /** Speed (m/s), gear and rpm (every frame; the DOM is touched only on change). */
-  gauges(speedMs: number, gear: number, rpm: number): void {
+  /** The traction control level in use (Arcade: 3). */
+  setTC(level: number): void {
+    text(this.tc, tcBadge(level));
+    this.tc.classList.toggle("off", level === 0);
+  }
+
+  /**
+   * Speed (m/s), gear and rpm; holding: a launch hold is on (every frame; the
+   * DOM is touched only on change).
+   */
+  gauges(speedMs: number, gear: number, rpm: number, holding = false): void {
     const v = kmh(speedMs);
     if (v !== this.lastSpeed) {
       this.lastSpeed = v;
@@ -114,13 +147,16 @@ export class Hud {
     }
     if (gear !== this.lastGear) {
       this.lastGear = gear;
-      text(this.gear, String(gear));
+      text(this.gear, gearLabel(gear));
+      this.gear.classList.toggle("rev", gear === 0);
     }
     this.rpm.style.transform = `scaleX(${rpmFill(rpm).toFixed(3)})`;
-    const lit = rpm >= RPM_SHIFT;
-    if (lit !== this.shiftLit) {
-      this.shiftLit = lit;
-      this.rpm.classList.toggle("shift", lit);
+    const bar = holding ? (launchReady(rpm) ? "ready" : "launch") : rpm >= RPM_SHIFT ? "shift" : "";
+    if (bar !== this.bar) {
+      this.bar = bar;
+      this.rpm.className = `rpm-fill ${bar}`.trim();
+      this.launch.hidden = !holding;
+      this.launch.classList.toggle("ready", bar === "ready");
     }
   }
 
@@ -136,6 +172,7 @@ export class Hud {
     this.lightsEl.hidden = false;
     this.lamps.forEach((l, i) => l.classList.toggle("on", !out && i < on));
     text(this.go, out ? t("hud.go") : "");
+    this.launchHint.hidden = out;
     if (out) this.goTimer = setTimeout(() => this.hideLights(), GO_MS);
   }
 

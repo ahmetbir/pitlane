@@ -1,0 +1,82 @@
+// The controls card: the keyboard and gamepad keys at a glance, rendered from
+// the bindings. Shown once before the first race, then on F1 / ? in a race
+// and from the home page. It covers only its own box, so the car can still be
+// driven while it is up; Escape closes it.
+import { fill, h } from "roomkit/ui/dom";
+import { t } from "../i18n/index.ts";
+import { keyRows, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";
+
+export type CardOpts = {
+  /** After it closed (the first-race card: remember it was seen). */
+  closed?(): void;
+  /** Opens the driver's manual (a button on the card). */
+  manual?(): void;
+  /** Opens the settings page at the controls (home only: a race would be left). */
+  settings?(): void;
+};
+
+function rows(list: readonly KeyRow[]): HTMLElement {
+  return h("table", { class: "keytable" }, h("tbody", {}, ...list.map(([k, what]) => h("tr", {}, h("td", {}, h("kbd", {}, k)), h("td", {}, what)))));
+}
+
+export class ControlsCard {
+  readonly el = h("div", { class: "controls-card", role: "dialog", "aria-labelledby": "controls-title", hidden: true });
+  private readonly opts: CardOpts;
+  private readonly onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.close();
+  };
+
+  constructor(opts: CardOpts = {}) {
+    this.opts = opts;
+  }
+
+  isOpen(): boolean {
+    return !this.el.hidden;
+  }
+
+  /** Shows the card for bindings b; focus: move the keyboard focus to it (not in a race). */
+  open(b: Bindings, focus = false): void {
+    const ok = h("button", { type: "button", class: "btn primary" }, t("card.gotIt"));
+    ok.addEventListener("click", () => this.close());
+    const manual = this.opts.manual ? h("button", { type: "button", class: "btn ghost" }, t("home.manual")) : null;
+    manual?.addEventListener("click", () => {
+      this.close();
+      this.opts.manual?.();
+    });
+    const change = this.opts.settings ? h("button", { type: "button", class: "btn ghost" }, t("card.change")) : null;
+    change?.addEventListener("click", () => {
+      this.close();
+      this.opts.settings?.();
+    });
+    fill(this.el, h("div", { class: "panel" },
+      h("h2", { id: "controls-title" }, t("card.controls")),
+      h("div", { class: "card-cols" },
+        h("section", {}, h("h3", {}, t("card.keyboard")), rows(keyRows(b))),
+        h("section", {}, h("h3", {}, t("card.gamepad")), rows(padRows()))),
+      h("p", { class: "muted hint" }, t("card.again")),
+      h("div", { class: "actions" }, change, manual, ok)));
+    if (!this.isOpen()) window.addEventListener("keydown", this.onKey, true);
+    this.el.hidden = false;
+    if (focus) ok.focus();
+  }
+
+  toggle(b: Bindings): void {
+    if (this.isOpen()) this.close();
+    else this.open(b);
+  }
+
+  close(): void {
+    if (!this.isOpen()) return;
+    this.hide();
+    this.opts.closed?.();
+  }
+
+  /** Closes without the closed() callback (the session ends). */
+  hide(): void {
+    this.el.hidden = true;
+    window.removeEventListener("keydown", this.onKey, true);
+  }
+}

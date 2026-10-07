@@ -70,3 +70,20 @@
   .hud .hint-banner.warn { font-size: 1.2rem; }
   #banner { top: 64px; }
 }
+
+/* v1.1: tools, traction control, launch, reverse, the lights' launch hint */
+.hud-tools { display: flex; gap: 6px; align-items: center; }
+.hud-tool { opacity: 0.8; text-shadow: none; }
+.hud-tool:hover { opacity: 1; }
+.hud .dash-tags { display: flex; gap: 6px; justify-content: center; margin-top: 7px; min-height: 18px; }
+.hud .tc-badge, .hud .launch-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 99px; text-shadow: none; }
+.hud .tc-badge { color: #cfe9ff; background: rgba(90, 169, 255, 0.18); border: 1px solid rgba(90, 169, 255, 0.35); }
+.hud .tc-badge.off { color: #ffd0cc; background: rgba(226, 59, 48, 0.2); border-color: rgba(226, 59, 48, 0.45); }
+.hud .tc-badge:empty { display: none; }
+.hud .launch-badge { color: #111; background: var(--yellow); }
+.hud .launch-badge.ready { background: var(--green); }
+.hud .rpm-fill.launch { background: var(--yellow); }
+.hud .rpm-fill.ready { background: var(--green); box-shadow: 0 0 10px rgba(47, 211, 107, 0.8); }
+.hud .gear.rev { color: #ff8f88; }
+.hud .launch-hint { margin: 0; padding: 6px 14px; border-radius: 9px; background: rgba(10, 13, 18, 0.72); font-weight: 700; font-size: 0.92rem; text-align: center; max-width: min(520px, calc(100vw - 32px)); }
+@media (max-width: 700px) { .hud .launch-hint { font-size: 0.8rem; } .hud-tools .hud-tool:last-child { display: none; } }

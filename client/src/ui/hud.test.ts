@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLang } from "../i18n/index.ts";
-import { gapText, lapOf, rpmFill } from "./hud.ts";
+import { gapText, gearLabel, lapOf, launchReady, rpmFill, tcBadge } from "./hud.ts";
+import { launchRPM } from "../car/car.ts";
 import { fastest, resultCells } from "./results.ts";
 
 test("lap shown: completed + 1, capped at the race distance", () => {
@@ -40,4 +41,16 @@ test("results: DNF marking, fastest lap", () => {
   assert.equal(fastest([]), 0);
   setLang("tr", null);
   assert.equal(resultCells(row).penalty, "+5 sn");
+});
+
+test("gear R in reverse, the launch bar at the launch rpm, the TC badge", () => {
+  assert.equal(gearLabel(0), "R");
+  assert.equal(gearLabel(3), "3");
+  assert.equal(launchReady(launchRPM), true);
+  assert.equal(launchReady(8000), false);
+  setLang("en", null);
+  assert.equal(tcBadge(2), "TC 2");
+  assert.equal(tcBadge(0), "TC OFF");
+  setLang("tr", null);
+  assert.equal(tcBadge(0), "TC KAPALI");
 });

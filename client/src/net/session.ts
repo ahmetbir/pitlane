@@ -6,7 +6,7 @@
 
 import { Socket, type Env, type Join, type Quick, type Status } from "roomkit/net/socket";
 import type { ShaperPolicy } from "roomkit/net/shaper";
-import { clampSetup, defaultSetup, parseHandling, type Handling, type Input, type Setup } from "../car/car.ts";
+import { clampSetup, defaultSetup, Handling, parseHandling, setupMax, TC, type Input, type Setup } from "../car/car.ts";
 import { Others } from "../predict/others.ts";
 import { Own, type OwnEnv, type OwnState } from "../predict/own.ts";
 import type { Track } from "../track/track.ts";
@@ -74,6 +74,11 @@ export class Session {
   /** Own car id, 0 before a welcome. */
   carID(): number {
     return this.car;
+  }
+
+  /** The traction control level the own car drives with: Arcade always 3, Sim the setup's. */
+  tcLevel(): number {
+    return this.handling === Handling.Arcade ? setupMax[TC] : this.setup[TC];
   }
 
   setToken(tok: string): void {

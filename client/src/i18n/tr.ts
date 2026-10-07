@@ -31,6 +31,14 @@ export const TR = {
   "home.codeErr": "Geçersiz oda kodu.",
   "home.joinTitle": "Kodla katıl",
   "home.joinPrompt": "Odaya katıl",
+  "home.manual": "El kitabı",
+
+  "card.controls": "Kontroller",
+  "card.keyboard": "Klavye",
+  "card.gamepad": "Gamepad",
+  "card.again": "Yarışta F1 ya da ? bu kartı yeniden açar. Tuşları Ayarlar'dan değiştirebilirsin.",
+  "card.gotIt": "Anladım",
+  "card.change": "Tuşları değiştir",
 
   "rooms.title": "Açık odalar",
   "rooms.loading": "Yükleniyor…",
@@ -123,6 +131,10 @@ export const TR = {
   "hud.go": "BAŞLA!",
   "hud.kmh": "km/sa",
   "hud.lapsDown": "+{n} tur",
+  "hud.tcOff": "TC KAPALI",
+  "hud.launch": "KALKIŞ",
+  "hud.launchHint": "Kalkış için {chord1} (ya da {chord2}) basılı tut, ışıklar sönünce bırak",
+  "hud.help": "Kontroller",
   "hud.finished": "Bitirdin — diğerleri turunu tamamlıyor",
 
   "results.title": "Sonuçlar",

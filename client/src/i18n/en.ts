@@ -34,6 +34,14 @@ export const EN: Area<typeof TR> = {
   "home.codeErr": "Invalid room code.",
   "home.joinTitle": "Join by code",
   "home.joinPrompt": "Join the room",
+  "home.manual": "Manual",
+
+  "card.controls": "Controls",
+  "card.keyboard": "Keyboard",
+  "card.gamepad": "Gamepad",
+  "card.again": "In a race, F1 or ? opens this card again. Change the keys in Settings.",
+  "card.gotIt": "Got it",
+  "card.change": "Change keys",
 
   "rooms.title": "Open rooms",
   "rooms.loading": "Loading…",
@@ -126,6 +134,10 @@ export const EN: Area<typeof TR> = {
   "hud.go": "GO!",
   "hud.kmh": "km/h",
   "hud.lapsDown": { one: "+{n} lap", other: "+{n} laps" },
+  "hud.tcOff": "TC OFF",
+  "hud.launch": "LAUNCH",
+  "hud.launchHint": "Hold {chord1} (or {chord2}) to launch; let go when the lights go out",
+  "hud.help": "Controls",
   "hud.finished": "Finished — the others are completing their lap",
 
   "results.title": "Results",
