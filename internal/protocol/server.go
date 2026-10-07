@@ -13,13 +13,13 @@ import (
 // is written from these; field names are fixed by wire v2).
 
 // NewWelcome builds the welcome of a player; tok is set only when a pilot
-// token was just issued. setup and dmg are the seated car's current ones.
+// token was just issued. setup, dmg and penMs are the seated car's current ones.
 func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, contact string, laps int, trackName string, creator bool,
-	setup car.Setup, dmg car.Damage) Welcome {
+	setup car.Setup, dmg car.Damage, penMs int) Welcome {
 	return Welcome{
 		Welcome: netproto.Welcome{T: netproto.TWelcome, You: you, Code: code, Tok: tok},
 		Car:     carID, Handling: handling, Contact: contact, Laps: laps, Track: trackName, Creator: creator,
-		Setup: SetupInts(setup), Dmg: EncodeDamage(dmg),
+		Setup: SetupInts(setup), Dmg: EncodeDamage(dmg), Pen: penMs,
 	}
 }
 
@@ -27,7 +27,7 @@ func NewWelcome(you netproto.PlayerID, code, tok string, carID uint8, handling, 
 // beside the room settings and the car's current setup and damage (a
 // takeover or a reconnect may seat a car that already has both).
 //
-//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,1,1],"dmg":{"fw":0,"rw":0,"su":0}}
+//	{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,1,1],"dmg":{"fw":0,"rw":0,"su":0},"pen":0}
 //
 // tok appears only when a pilot token was just issued.
 type Welcome struct {
@@ -40,6 +40,7 @@ type Welcome struct {
 	Creator  bool       `json:"creator"` // may press start
 	Setup    SetupInts  `json:"setup"`   // the car's setup [fw, rw, bb, gear, diff, susp, tc, abs]
 	Dmg      DamageInts `json:"dmg"`     // the car's damage
+	Pen      int        `json:"pen"`     // the car's penalty so far, ms (a reconnect shows the badge again)
 }
 
 // DamageInts is a car's damage on the wire: each part ×1000 (0 intact … 1000 broken).
@@ -68,6 +69,25 @@ type DmgMsg struct {
 // NewDmg builds the damage message of a car.
 func NewDmg(id race.CarID, d DamageInts) DmgMsg {
 	return DmgMsg{T: TDmg, Car: uint8(id), DamageInts: d}
+}
+
+// PenMsg: a car was penalised (jump start: moved off the slot under the lights); not
+// evictable. Sent to everyone; ms is the penalty added, why its reason.
+//
+//	{"t":"pen","car":3,"ms":5000,"why":"jump"}
+type PenMsg struct {
+	T   string `json:"t"` // "pen"
+	Car uint8  `json:"car"`
+	Ms  int    `json:"ms"`
+	Why string `json:"why"` // "jump"
+}
+
+// WhyJump is the reason of a jump-start penalty.
+const WhyJump = "jump"
+
+// NewJumpPen builds the jump-start penalty message of a car; ms is race's penalty.
+func NewJumpPen(id race.CarID, ms int) PenMsg {
+	return PenMsg{T: TPen, Car: uint8(id), Ms: ms, Why: WhyJump}
 }
 
 // Snap is the 30 Hz state; evictable. cars rows are

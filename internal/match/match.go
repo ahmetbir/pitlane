@@ -73,7 +73,7 @@ func (m *Match) Welcome(id room.PlayerID, code, newToken string, out room.Outbox
 	cid := race.CarID(id)
 	c := m.r.Cars()[cid-1]
 	out.To(id, protocol.NewWelcome(id, code, newToken, uint8(cid), m.set.Handling.String(), m.set.Contact.String(),
-		m.set.Laps, trackName, m.r.Creator() == cid, c.Driver.Setup, c.St.Dmg))
+		m.set.Laps, trackName, m.r.Creator() == cid, c.Driver.Setup, c.St.Dmg, c.PenaltyMs))
 	m.syncGrid(out, true) // one grid for everyone, the new player included
 	switch m.r.Phase() {
 	case race.Lights:
@@ -130,7 +130,7 @@ func (m *Match) notice(id room.PlayerID, code, msg string, out room.Outbox) {
 
 // Step runs one tick. Order of sends: damage changes, snapshot (every
 // SnapEvery ticks), grid (when the roster or a ready flag changed, or the
-// phase became grid), lights, laps, wings, resets, results.
+// phase became grid), lights, laps, wings, jump-start penalties, resets, results.
 func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	clear(m.in)
 	for id, i := range inputs { // each input touches its own car only: map order does not matter
@@ -162,6 +162,9 @@ func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	}
 	for _, id := range ev.WingLost {
 		out.All(protocol.NewWing(id))
+	}
+	for _, id := range ev.JumpStart {
+		out.All(protocol.NewJumpPen(id, race.JumpStartPenMs))
 	}
 	for _, id := range ev.Reset {
 		out.All(protocol.NewReset(id))

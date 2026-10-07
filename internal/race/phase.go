@@ -74,3 +74,6 @@ const (
 	dropBack        = 200.0              // m: … up to this far
 	edgeIn          = 1.5                // m: an edge drop's centre inside the asphalt edge
 )
+
+// JumpStartPenMs is the time added for a jump start, ms.
+const JumpStartPenMs = jumpStartPenMs

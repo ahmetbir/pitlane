@@ -191,6 +191,36 @@ func TestFullFlow(t *testing.T) {
 	}
 }
 
+func TestJumpStartSendsPenOnceAndWelcomeCarriesIt(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	a := join(t, m, out, "Ace")
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 1, 1}}, out)
+	m.Step(nil, out)
+	if m.r.Phase() != race.Lights {
+		t.Fatalf("phase %v", m.r.Phase())
+	}
+	out.take()
+	for i := 0; i < 120 && m.r.Phase() == race.Lights; i++ {
+		m.Step(map[room.PlayerID]protocol.Input{a: {Th: 100}}, out)
+	}
+	var pens []protocol.PenMsg
+	for _, s := range out.take() {
+		if p, ok := s.msg.(protocol.PenMsg); ok {
+			if s.to != 0 {
+				t.Fatal("pen is for everyone")
+			}
+			pens = append(pens, p)
+		}
+	}
+	if len(pens) != 1 || pens[0] != (protocol.PenMsg{T: "pen", Car: 1, Ms: 5000, Why: "jump"}) {
+		t.Fatalf("pens %+v", pens)
+	}
+	m.Welcome(a, "ABCD", "", out) // a reconnect
+	if w := of[protocol.Welcome](out.take()); len(w) != 1 || w[0].Pen != 5000 {
+		t.Fatalf("welcome %+v", w)
+	}
+}
+
 func TestSnapEverySecondTickWithAck(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Ace")

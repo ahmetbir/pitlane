@@ -36,6 +36,7 @@ const (
 	TWing    = "wing"
 	TReset   = "reset"
 	TDmg     = "dmg"
+	TPen     = "pen"
 )
 
 // ChatMax is the highest quick chat preset ID (presets are 1..ChatMax).

@@ -163,7 +163,8 @@ func TestMessageWires(t *testing.T) {
 		v    any
 		want string
 	}{
-		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,1,1],"dmg":{"fw":0,"rw":0,"su":0}}`},
+		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,1,1],"dmg":{"fw":0,"rw":0,"su":0},"pen":0}`},
+		{NewJumpPen(3, 5000), `{"t":"pen","car":3,"ms":5000,"why":"jump"}`},
 		{NewDmg(3, DamageInts{FW: 420, SU: 75}), `{"t":"dmg","car":3,"fw":420,"rw":0,"su":75}`},
 		{LightsMsg{T: TLights, On: 3}, `{"t":"lights","on":3}`},
 		{LightsMsg{T: TLights, Out: 2210}, `{"t":"lights","on":0,"out":2210}`},
@@ -254,10 +255,10 @@ func TestDecodeBoundary(t *testing.T) {
 }
 
 func TestWelcomeTok(t *testing.T) {
-	w := NewWelcome(7, "K3FQ", "tok123", 4, "arcade", "soft", 5, "kiyi", true, car.Setup{3, 8, 62, 2, 7, 4, 1, 2}, car.Damage{FrontWing: 0.42, Susp: 0.0755})
+	w := NewWelcome(7, "K3FQ", "tok123", 4, "arcade", "soft", 5, "kiyi", true, car.Setup{3, 8, 62, 2, 7, 4, 1, 2}, car.Damage{FrontWing: 0.42, Susp: 0.0755}, 5000)
 	b, err := json.Marshal(w)
 	want := `{"t":"welcome","you":7,"code":"K3FQ","tok":"tok123","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,` +
-		`"setup":[3,8,62,2,7,4,1,2],"dmg":{"fw":420,"rw":0,"su":76}}`
+		`"setup":[3,8,62,2,7,4,1,2],"dmg":{"fw":420,"rw":0,"su":76},"pen":5000}`
 	if err != nil || string(b) != want {
 		t.Fatalf("%s %v", b, err)
 	}

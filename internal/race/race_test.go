@@ -78,12 +78,16 @@ func TestJumpStartPenalty(t *testing.T) {
 	a, _ := r.Seat("a", "")
 	b, _ := r.Seat("b", "")
 	r.Start(r.Creator())
+	var jumps []CarID
 	for r.Phase() == Lights && r.Tick() < 200 {
 		var in map[CarID]car.Input
 		if r.Tick() >= 100 {
 			in = map[CarID]car.Input{a: {Throttle: 1}}
 		}
-		r.Step(in)
+		jumps = append(jumps, r.Step(in).JumpStart...)
+	}
+	if len(jumps) != 1 || jumps[0] != a {
+		t.Fatalf("jump-start events %v, want [%d] once", jumps, a)
 	}
 	if r.Phase() != Lights {
 		t.Fatal("lights ended early")
@@ -99,7 +103,9 @@ func TestJumpStartPenalty(t *testing.T) {
 	}
 	_ = b
 	for i := 0; i < 5; i++ {
-		r.Step(map[CarID]car.Input{a: {Throttle: 1}})
+		if ev := r.Step(map[CarID]car.Input{a: {Throttle: 1}}); len(ev.JumpStart) != 0 {
+			t.Fatal("second event for the same start")
+		}
 	}
 	if r.Cars()[0].PenaltyMs != 5000 {
 		t.Fatal("penalty applied more than once")

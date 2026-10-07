@@ -115,6 +115,7 @@ type Events struct {
 	PhaseChanged bool
 	WingLost     []CarID // cars whose front wing came off this tick (full contact)
 	Reset        []CarID // cars the marshals put back on the racing line this tick
+	JumpStart    []CarID // cars penalised for a jump start this tick (once per car and start)
 }
 
 type Race struct {
@@ -571,7 +572,7 @@ func (r *Race) Step(inputs map[CarID]car.Input) Events {
 			ev.PhaseChanged = true
 		}
 	case Lights:
-		r.checkJumpStart()
+		r.checkJumpStart(&ev)
 		if elapsed%lightTicks == 0 && elapsed/lightTicks <= lightCount {
 			ev.Lights = elapsed / lightTicks
 		}
@@ -628,12 +629,13 @@ func (r *Race) setPhase(p Phase) {
 }
 
 // checkJumpStart penalises cars that moved off their slot while the lights are on.
-func (r *Race) checkJumpStart() {
+func (r *Race) checkJumpStart(ev *Events) {
 	for _, c := range r.cars {
 		g := c.slot
 		if !c.jumped && math.Hypot(c.St.X-g.X, c.St.Z-g.Z) > jumpStartMeters {
 			c.jumped = true
 			c.PenaltyMs += jumpStartPenMs
+			ev.JumpStart = append(ev.JumpStart, c.ID)
 		}
 	}
 }
