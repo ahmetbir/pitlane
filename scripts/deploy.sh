@@ -419,7 +419,7 @@ preflight_network() {
   done
   ports+=" 1.1.1.1:443"
   bad() { echo "preflight: FAIL: $*" >&2; fail=1; }
-  for t in "${urls[@]}"; do
+  for t in ${urls[@]+"${urls[@]}"}; do
     code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$t" || true)"
     [[ "$code" == 200 ]] || die "$t answers $code before anything changed; fix that first"
   done
@@ -453,7 +453,7 @@ preflight_network() {
   done <<<"$out"
   remote "docker rm -f '$NETPROBE' >/dev/null 2>&1" || true
 
-  for t in "${urls[@]}"; do
+  for t in ${urls[@]+"${urls[@]}"}; do
     code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$t" || true)"
     if [[ "$code" == 200 ]]; then echo "preflight: ok: $t 200"; else bad "$t answers $code after the change"; fi
   done
