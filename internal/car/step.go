@@ -8,7 +8,7 @@ import "math"
 func Step(st *State, p *Params, in Input, env Env) {
 	in = in.Clean()
 	mu := clean(env.Mu, 0, 2)
-	if st.Gear < 1 || st.Gear > 8 {
+	if st.Gear < 0 || st.Gear > 8 {
 		st.Gear = 1
 	}
 	if n := float64(st.HX*st.HX) + float64(st.HZ*st.HZ); !(n > 0.25 && n < 4) {
@@ -34,8 +34,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 	af := clamp((float64(st.Delta*st.VX)-float64(cd*w))/den, slipCap)
 	ar := clamp(-(st.VY-float64(cgRear*st.R))/den, slipCap)
 
-	// Assists.
+	// Reverse gear: selected while (nearly) stopped or rolling backwards;
+	// rolling forward, the reverse pedal brakes the car first.
+	rev := in.Reverse && st.VX < revEngage
 	thr, brk := in.Throttle, in.Brake
+	if in.Reverse && !rev {
+		thr, brk = 0, max(brk, thr)
+	}
+
+	// Assists.
 	if p.Assists {
 		if abs(ar) > tcSlip*p.AlphaR {
 			thr = float64(thr * tcCut)
@@ -52,21 +59,29 @@ func Step(st *State, p *Params, in Input, env Env) {
 	fzF := max(p.FzF0+float64(p.AeroF*v2)-tr, float64(minLoad*p.FzF0))
 	fzR := max(p.FzR0+float64(p.AeroR*v2)+tr, float64(minLoad*p.FzR0))
 
-	// Engine and automatic gearbox.
+	// Engine and automatic gearbox; reverse (gear 0) has first gear's ratio.
 	sv := abs(st.VX)
-	rpm := sv * p.RPMPerMS[st.Gear-1]
-	if rpm > shiftUp && st.Gear < 8 {
-		st.Gear++
-	} else if rpm < shiftDown && st.Gear > 1 && sv*p.RPMPerMS[st.Gear-2] < shiftUp {
-		st.Gear--
+	if rev {
+		st.Gear = 0
+	} else {
+		if st.Gear == 0 {
+			st.Gear = 1
+		}
+		if rpm := sv * p.RPMPerMS[st.Gear-1]; rpm > shiftUp && st.Gear < 8 {
+			st.Gear++
+		} else if rpm < shiftDown && st.Gear > 1 && sv*p.RPMPerMS[st.Gear-2] < shiftUp {
+			st.Gear--
+		}
 	}
-	rpm = max(sv*p.RPMPerMS[st.Gear-1], idleRPM)
+	g := max(st.Gear, 1) - 1
+	rpm := max(sv*p.RPMPerMS[g], idleRPM)
 	st.RPM = rpm
-	drive := 0.0
-	if thr > 0 {
-		// Pedal map: torque × throttle², so part throttle is gentle. The engine
-		// pushes forward at any VX sign (a car rolling backwards recovers).
-		drive = float64(float64(float64(thr*thr)*torque(rpm)) * p.Drive[st.Gear-1])
+	drive := 0.0 // magnitude; reverse flips its sign below
+	if thr > 0 && !(rev && st.VX < -revTop) {
+		// Pedal map: torque × throttle², so part throttle is gentle. A forward
+		// gear pushes forward at any VX sign (a car rolling backwards
+		// recovers); reverse cuts out beyond revTop.
+		drive = float64(float64(float64(thr*thr)*torque(rpm)) * p.Drive[g])
 	}
 
 	// Lateral slip forces, then lateral transfer as grip loss on each axle.
@@ -121,6 +136,9 @@ func Step(st *State, p *Params, in Input, env Env) {
 		// still leaves the rear lateral grip to turn with.
 		drive = min(drive, float64(tcShare*capR))
 	}
+	if rev {
+		drive = -drive
+	}
 	fxR := clamp(drive-float64(ux*bR), capX)
 	fyF = circle(fxF, fyF-float64(uy*bF), capF)
 	fyR = circle(fxR, fyR-float64(uy*bR), capR)
@@ -137,10 +155,10 @@ func Step(st *State, p *Params, in Input, env Env) {
 	ay := fy / mass
 	rdot := (float64(cgFront*fyFl) - float64(cgRear*fyR)) / yawI
 
-	// Integrate the force part. It never reverses VX (no reverse gear; brakes
-	// stop, they do not push back).
+	// Integrate the force part. Outside reverse it never takes VX below 0
+	// (brakes stop, they do not push back).
 	vx := st.VX + float64(ax*DT)
-	if st.VX > 0 && vx < 0 || st.VX < 0 && vx > 0 && drive == 0 {
+	if !rev && st.VX > 0 && vx < 0 || st.VX < 0 && vx > 0 && drive == 0 {
 		vx = 0
 	}
 	vy := st.VY + float64(ay*DT)

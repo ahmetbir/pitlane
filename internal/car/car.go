@@ -69,11 +69,17 @@ type Damage struct{ FrontWing, RearWing, Susp float64 }
 // FrontWingLost reports whether the front wing is gone (damage above 0.6).
 func (d Damage) FrontWingLost() bool { return d.FrontWing > wingLost }
 
-// Input is one tick of driver input: Throttle 0..1, Brake 0..1, Steer -1..1 (left +).
-type Input struct{ Throttle, Brake, Steer float64 }
+// Input is one tick of driver input: Throttle 0..1, Brake 0..1, Steer -1..1
+// (left +). Reverse selects the reverse gear, which the throttle drives while
+// the car is (nearly) stopped or rolling backwards; rolling forward, the
+// throttle then brakes.
+type Input struct {
+	Throttle, Brake, Steer float64
+	Reverse                bool
+}
 
 func (in Input) Clean() Input {
-	return Input{clean(in.Throttle, 0, 1), clean(in.Brake, 0, 1), clean(in.Steer, -1, 1)}
+	return Input{Throttle: clean(in.Throttle, 0, 1), Brake: clean(in.Brake, 0, 1), Steer: clean(in.Steer, -1, 1), Reverse: in.Reverse}
 }
 
 func clean(v, lo, hi float64) float64 {
@@ -99,7 +105,7 @@ type State struct {
 	VX, VY, R float64 // body forward, body left (m/s), yaw rate (rad/s, CCW +)
 	Delta     float64 // front wheel angle (rad, left +)
 	RPM       float64
-	Gear      int // 1..8
+	Gear      int // 1..8; 0 is reverse
 	AX        float64
 	Dmg       Damage
 }
@@ -149,6 +155,8 @@ const (
 	yawDamp    = 0.9   // low-speed yaw damping per step
 	yawCapK    = 1.15  // Arcade yaw cap margin over available lateral grip
 	arcadeVX   = 60.0  // Arcade steer scaling speed
+	revEngage  = 0.5   // reverse engages below this VX (m/s)
+	revTop     = 8.0   // reverse drive cuts out beyond this backward speed (m/s)
 	tcCut      = 0.5   // Arcade TC throttle factor
 	tcShare    = 0.8   // TC level 3 (and Arcade): drive ≤ this share of the rear capacity
 	absCut     = 0.6   // Arcade ABS brake factor

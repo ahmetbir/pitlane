@@ -451,7 +451,7 @@ func finite(st State) bool {
 			return false
 		}
 	}
-	return st.Gear >= 1 && st.Gear <= 8
+	return st.Gear >= 0 && st.Gear <= 8
 }
 
 func TestNoNaNUnderAbuse(t *testing.T) {
@@ -476,7 +476,7 @@ func TestNoNaNUnderAbuse(t *testing.T) {
 			ticks := 10000
 			for i := range ticks {
 				if i%20 == 0 {
-					in = Input{Throttle: r.val(0, 1), Brake: r.val(0, 1), Steer: r.val(-1, 1)}.Clean()
+					in = Input{Throttle: r.val(0, 1), Brake: r.val(0, 1), Steer: r.val(-1, 1), Reverse: r.next()%4 == 0}.Clean()
 				}
 				Step(&st, &p, in, envs[i/200%3])
 				if !finite(st) {
@@ -488,11 +488,11 @@ func TestNoNaNUnderAbuse(t *testing.T) {
 }
 
 func TestInputClean(t *testing.T) {
-	got := Input{Throttle: math.NaN(), Brake: 3, Steer: math.Inf(-1)}.Clean()
-	if got != (Input{Throttle: 0, Brake: 1, Steer: 0}) {
+	got := Input{Throttle: math.NaN(), Brake: 3, Steer: math.Inf(-1), Reverse: true}.Clean()
+	if got != (Input{Throttle: 0, Brake: 1, Steer: 0, Reverse: true}) {
 		t.Fatalf("clean: %+v", got)
 	}
-	if got := (Input{Throttle: -1, Brake: 0.5, Steer: -7}).Clean(); got != (Input{0, 0.5, -1}) {
+	if got := (Input{Throttle: -1, Brake: 0.5, Steer: -7}).Clean(); got != (Input{Brake: 0.5, Steer: -1}) {
 		t.Fatalf("clean: %+v", got)
 	}
 }
@@ -636,4 +636,76 @@ func zeroTo(h Handling, su Setup, v float64, launch bool) float64 {
 		prev = st.Speed()
 	}
 	return math.Inf(1)
+}
+
+// Reverse from rest at full throttle: the car backs up to about revTop and
+// holds it, in gear 0, in both handlings.
+func TestReverseTopSpeed(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		st := rest()
+		lo, hi := math.Inf(1), math.Inf(-1)
+		for i := range 60 * 6 {
+			Step(&st, &p, Input{Throttle: 1, Reverse: true}, asphalt)
+			if i >= 60*4 {
+				lo, hi = min(lo, st.VX), max(hi, st.VX)
+			}
+		}
+		t.Logf("%v: reverse VX %.3f .. %.3f m/s, gear %d, x %.2f m", h, lo, hi, st.Gear, st.X)
+		if st.Gear != 0 || lo < -8.5 || hi > -7.5 || st.X > -30 {
+			t.Fatalf("%v: reverse VX %.3f .. %.3f, gear %d, x %.2f", h, lo, hi, st.Gear, st.X)
+		}
+	}
+}
+
+// Steering reverses with the direction of travel: left lock turns the car
+// left (R > 0) going forward and right (R < 0) backing up.
+func TestReverseSteersTheOtherWay(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		back := rest()
+		for range 60 * 3 {
+			Step(&back, &p, Input{Throttle: 1, Reverse: true}, asphalt)
+		}
+		fwd := rest()
+		fwd.VX = 8
+		for range 60 {
+			Step(&back, &p, Input{Throttle: 0.5, Reverse: true, Steer: 1}, asphalt)
+			Step(&fwd, &p, Input{Throttle: 0.2, Steer: 1}, asphalt)
+		}
+		t.Logf("%v: left lock forward R %.3f, backwards R %.3f (VX %.2f, VY %.2f)", h, fwd.R, back.R, back.VX, back.VY)
+		if !(fwd.R > 0.3 && back.R < -0.3 && back.VX < -3) || math.Abs(back.VY) > 2.5 {
+			t.Fatalf("%v: forward R %.3f, backwards R %.3f VX %.2f VY %.2f", h, fwd.R, back.R, back.VX, back.VY)
+		}
+	}
+}
+
+// Reverse selected while rolling forward brakes the car to a stop first,
+// then backs up; without Reverse the brakes never push the car backwards.
+func TestReverseWhileRollingForwardBrakes(t *testing.T) {
+	p := NewParams(Sim, DefaultSetup(), Damage{})
+	st := rest()
+	st.VX, st.Gear = 20, 3
+	prev, stopped := st.VX, -1
+	for i := range 60 * 8 {
+		Step(&st, &p, Input{Throttle: 1, Reverse: true}, asphalt)
+		if st.VX > prev+1e-9 && st.VX > 0 {
+			t.Fatalf("tick %d: VX rose %.3f → %.3f with reverse selected", i, prev, st.VX)
+		}
+		if stopped < 0 && st.VX <= 0 {
+			stopped = i
+		}
+		prev = st.VX
+	}
+	if stopped < 0 || st.VX > -7 || st.Gear != 0 {
+		t.Fatalf("stopped at tick %d, VX %.2f gear %d", stopped, st.VX, st.Gear)
+	}
+	t.Logf("20 m/s → stop in %.2f s, then VX %.2f", float64(stopped)*DT, st.VX)
+	held := rest()
+	for range 60 {
+		Step(&held, &p, Input{Brake: 1}, asphalt)
+	}
+	if held.VX != 0 || held.X != 0 || held.Gear != 1 {
+		t.Fatalf("brake at rest: VX %v X %v gear %d", held.VX, held.X, held.Gear)
+	}
 }

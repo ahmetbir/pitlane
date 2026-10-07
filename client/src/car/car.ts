@@ -67,15 +67,20 @@ export function frontWingLost(d: Damage): boolean {
   return d.frontWing > wingLost;
 }
 
-/** One tick of driver input: throttle 0..1, brake 0..1, steer -1..1 (left +). */
+/**
+ * One tick of driver input: throttle 0..1, brake 0..1, steer -1..1 (left +).
+ * reverse selects the reverse gear, which the throttle drives while the car is
+ * (nearly) stopped or rolling backwards; rolling forward, the throttle brakes.
+ */
 export interface Input {
   throttle: number;
   brake: number;
   steer: number;
+  reverse?: boolean;
 }
 
 export function cleanInput(input: Input): Input {
-  return { throttle: clean(input.throttle, 0, 1), brake: clean(input.brake, 0, 1), steer: clean(input.steer, -1, 1) };
+  return { throttle: clean(input.throttle, 0, 1), brake: clean(input.brake, 0, 1), steer: clean(input.steer, -1, 1), reverse: input.reverse === true };
 }
 
 function clean(v: number, lo: number, hi: number): number {
@@ -105,6 +110,7 @@ export interface State {
   r: number;
   delta: number;
   rpm: number;
+  /** 1..8; 0 is reverse. */
   gear: number;
   ax: number;
   dmg: Damage;
@@ -149,6 +155,9 @@ const slipVX = 3.0;
 const yawDamp = 0.9;
 const yawCapK = 1.15;
 const arcadeVX = 60.0;
+const revEngage = 0.5;
+/** Reverse drive cuts out beyond this backward speed (m/s). */
+export const revTop = 8.0;
 const tcCut = 0.5;
 const tcShare = 0.8;
 /** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */
@@ -247,7 +256,7 @@ export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
 export function step(st: State, p: Params, input: Input, env: Env): void {
   const inp = cleanInput(input);
   const mu = clean(env.mu, 0, 2);
-  if (st.gear < 1 || st.gear > 8) st.gear = 1;
+  if (st.gear < 0 || st.gear > 8) st.gear = 1;
   {
     const n = st.hx * st.hx + st.hz * st.hz;
     if (!(n > 0.25 && n < 4)) {
@@ -269,8 +278,15 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const af = clamp((st.delta * st.vx - cd * w) / den, slipCap);
   const ar = clamp(-(st.vy - cgRear * st.r) / den, slipCap);
 
-  // Assists.
+  // Reverse gear: (nearly) stopped or rolling backwards; rolling forward the pedal brakes.
+  const rev = inp.reverse === true && st.vx < revEngage;
   let thr = inp.throttle, brk = inp.brake;
+  if (inp.reverse === true && !rev) {
+    brk = Math.max(brk, thr);
+    thr = 0;
+  }
+
+  // Assists.
   if (p.assists) {
     if (abs(ar) > tcSlip * p.alphaR) thr = thr * tcCut;
     if (abs(af) > p.alphaF) brk = brk * absCut;
@@ -283,18 +299,24 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const fzF = Math.max(p.fzF0 + p.aeroF * v2 - tr, minLoad * p.fzF0);
   const fzR = Math.max(p.fzR0 + p.aeroR * v2 + tr, minLoad * p.fzR0);
 
-  // Engine and automatic gearbox.
+  // Engine and automatic gearbox; reverse (gear 0) has first gear's ratio.
   const sv = abs(st.vx);
-  let rpm = sv * p.rpmPerMS[st.gear - 1];
-  if (rpm > shiftUp && st.gear < 8) {
-    st.gear++;
-  } else if (rpm < shiftDown && st.gear > 1 && sv * p.rpmPerMS[st.gear - 2] < shiftUp) {
-    st.gear--;
+  if (rev) {
+    st.gear = 0;
+  } else {
+    if (st.gear === 0) st.gear = 1;
+    const r0 = sv * p.rpmPerMS[st.gear - 1];
+    if (r0 > shiftUp && st.gear < 8) {
+      st.gear++;
+    } else if (r0 < shiftDown && st.gear > 1 && sv * p.rpmPerMS[st.gear - 2] < shiftUp) {
+      st.gear--;
+    }
   }
-  rpm = Math.max(sv * p.rpmPerMS[st.gear - 1], idleRPM);
+  const g = Math.max(st.gear, 1) - 1;
+  const rpm = Math.max(sv * p.rpmPerMS[g], idleRPM);
   st.rpm = rpm;
-  let drive = 0.0;
-  if (thr > 0) drive = thr * thr * torque(rpm) * p.drive[st.gear - 1];
+  let drive = 0.0; // magnitude; reverse flips its sign below
+  if (thr > 0 && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
 
   // Lateral slip forces, then lateral transfer as grip loss on each axle.
   const baseMu = mu * p.mu * p.gripDmg;
@@ -338,6 +360,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const bR = Math.min(brk * p.brakeR, capR);
   const fxF = -(ux * bF);
   if (p.assists) drive = Math.min(drive, tcShare * capR);
+  if (rev) drive = -drive;
   const fxR = clamp(drive - ux * bR, capX);
   fyF = circle(fxF, fyF - uy * bF, capF);
   fyR = circle(fxR, fyR - uy * bR, capR);
@@ -351,9 +374,9 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const ay = fy / mass;
   const rdot = (cgFront * fyFl - cgRear * fyR) / yawI;
 
-  // Integrate the force part; never reverses VX.
+  // Integrate the force part; outside reverse never takes VX below 0.
   let vx = st.vx + ax * DT;
-  if ((st.vx > 0 && vx < 0) || (st.vx < 0 && vx > 0 && drive === 0)) vx = 0;
+  if ((!rev && st.vx > 0 && vx < 0) || (st.vx < 0 && vx > 0 && drive === 0)) vx = 0;
   let vy = st.vy + ay * DT;
   st.r += rdot * DT;
   if (p.assists) {
