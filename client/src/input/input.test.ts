@@ -16,7 +16,8 @@ function rig(bindings?: Bindings) {
   let throws = false;
   let vx = 0;
   let blocked = false;
-  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t, bindings, vx: () => vx, blocked: () => blocked });
+  let gear = 1;
+  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t, bindings, vx: () => vx, gear: () => gear, blocked: () => blocked });
   const fire = (k: string, e: object) => (fns[k] ?? []).forEach((f) => f(e));
   return {
     c,
@@ -28,6 +29,7 @@ function rig(bindings?: Bindings) {
     advance: (s: number) => (t += s),
     setVX: (v: number) => (vx = v),
     setBlocked: (v: boolean) => (blocked = v),
+    setGear: (g: number) => (gear = g),
   };
 }
 const mkPad = (axis0: number, lt = 0, rt = 0, a = 0, b = 0): PadLike => ({
@@ -223,7 +225,8 @@ test("space brakes; S brakes while rolling forward, reverses when stopped", () =
   r.setVX(0.5);
   assert.deepEqual(r.c.sample(0.075), { th: 50, br: 0, st: 0, rv: true }, "stopped: S drives the reverse gear");
   r.setVX(-6);
-  assert.deepEqual(r.c.sample(0.075), { th: 100, br: 0, st: 0, rv: true }, "backing up: still reverse");
+  r.setGear(0);
+  assert.deepEqual(r.c.sample(0.075), { th: 100, br: 0, st: 0, rv: true }, "backing up in reverse: still reverse");
   r.up("KeyS");
   r.down("ArrowDown");
   assert.equal(r.c.sample(0.016).rv, true, "↓ is the same action");
@@ -347,4 +350,23 @@ test("a key releases what its keydown started: ? with Shift let go first works e
   assert.equal(r.c.sample(0.15).th, 100, "↑ still held: throttle stays on");
   r.up("ArrowUp");
   assert.equal(r.c.sample(0.016).th, 0);
+});
+
+test("S and pad B brake a car rolling backwards out of reverse (after a spin)", () => {
+  const r = rig();
+  r.setVX(-4);
+  r.setGear(2);
+  r.down("KeyS");
+  assert.deepEqual(r.c.sample(0.1), { th: 0, br: 100, st: 0 }, "rolling back in gear 2: brake");
+  r.setVX(-0.4);
+  assert.deepEqual(r.c.sample(0.15), { th: 100, br: 0, st: 0, rv: true }, "stopped: reverse");
+  r.setGear(0);
+  r.setVX(-6);
+  assert.equal(r.c.sample(0.016).rv, true, "in gear R: reverse continues");
+  r.up("KeyS");
+  r.setGear(3);
+  r.setPad(mkPad(0, 0, 0, 0, 1));
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 100, st: 0 }, "pad B rolling back out of reverse: brake");
+  r.setGear(0);
+  assert.deepEqual(r.c.sample(0.016), { th: 100, br: 0, st: 0, rv: true }, "pad B in reverse: reverse");
 });

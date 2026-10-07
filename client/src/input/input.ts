@@ -2,10 +2,11 @@
 // moving gamepad (standard mapping) overrides the keyboard for GAMEPAD_HOLD_S.
 // Output is in wire units (th/br 0..100, st −127..127, left +, rv reverse).
 //
-// Keys come from the bindings (bindings.ts). The brake/reverse key brakes
-// while the car rolls forward faster than STOPPED_VX and drives the reverse
-// gear below it; the launch key held with the throttle while stopped holds
-// the car on the brakes at full revs (car.ts launch), released it launches.
+// Keys come from the bindings (bindings.ts). The brake/reverse key drives the
+// reverse gear while the car is stopped (|VX| ≤ STOPPED_VX) or already in
+// reverse, and brakes otherwise (rolling forward, or backwards after a spin);
+// the launch key held with the throttle while stopped holds the car on the
+// brakes at full revs (car.ts launch), released it launches.
 // Shift is a game key (the launch chord); Ctrl, Alt and Meta chords are the
 // browser's and are ignored.
 
@@ -22,7 +23,7 @@ const TRIGGER_DEADZONE = 0.05;
 const MOVE_EPS = 0.02;
 /** Seconds a gamepad keeps the car after its last movement. */
 export const GAMEPAD_HOLD_S = 2;
-/** At or below this forward speed (m/s) the car counts as stopped: brake/reverse reverses, launch holds. */
+/** At or below this speed (|VX|, m/s) the car counts as stopped: brake/reverse reverses, launch holds. */
 export const STOPPED_VX = 0.5;
 
 // Standard-mapping buttons.
@@ -45,6 +46,8 @@ export type ControlsDeps = {
   bindings?: Bindings;
   /** The own car's forward speed VX (m/s); 0 before it is on track. */
   vx?: () => number;
+  /** The own car's gear (0 = reverse); 1 before it is on track. */
+  gear?: () => number;
   /**
    * True while a screen covers the race (the manual, the controls card):
    * the car gets neutral input and driving keys keep their browser default
@@ -147,8 +150,10 @@ export class Controls {
       return wireInput({ throttle: 0, brake: 0, steer: 0 });
     }
     const vx = this.deps.vx?.() ?? 0;
-    const stopped = !(vx > STOPPED_VX);
-    const pad = this.pollPad(stopped);
+    const stopped = Math.abs(vx) <= STOPPED_VX;
+    // Reverse: from a stop, or on in reverse; rolling either way out of gear R the key brakes.
+    const canReverse = stopped || (this.deps.gear?.() === 0 && vx < STOPPED_VX);
+    const pad = this.pollPad(stopped, canReverse);
     if (pad) {
       this.th = pad.th;
       this.br = pad.br;
@@ -159,7 +164,7 @@ export class Controls {
     const go = this.holding("throttle");
     const back = this.holding("brakeReverse");
     // Throttle held, the brake/reverse key brakes (W+S stopped is a launch hold too).
-    const reverse = back && stopped && !go;
+    const reverse = back && canReverse && !go;
     const launch = go && stopped && this.holding("launch");
     const brake = this.holding("brake") || (back && !reverse) || launch;
     this.th = go || reverse ? Math.min(1, this.th + dt / THROTTLE_RAMP_S) : 0;
@@ -205,10 +210,10 @@ export class Controls {
 
   /**
    * The active pad's input, or null when no standard pad moved within
-   * GAMEPAD_HOLD_S. B brakes while rolling forward and reverses at full
-   * throttle while stopped; A held with RT while stopped holds a launch.
+   * GAMEPAD_HOLD_S. B reverses at full throttle from a stop or in reverse
+   * and brakes otherwise; A held with RT while stopped holds a launch.
    */
-  private pollPad(stopped: boolean): { th: number; br: number; st: number; rv: boolean } | null {
+  private pollPad(stopped: boolean, canReverse: boolean): { th: number; br: number; st: number; rv: boolean } | null {
     const now = this.deps.now();
     let pad: PadLike = null;
     try {
@@ -238,19 +243,19 @@ export class Controls {
     if (now > this.padActiveUntil) return null;
     const rt = rescale(cur[2], TRIGGER_DEADZONE), lt = rescale(cur[1], TRIGGER_DEADZONE);
     const a = cur[3] > 0.5, b = cur[4] > 0.5;
-    const rv = b && stopped; // B: full reverse while stopped, the brake while rolling forward
+    const rv = b && canReverse; // B: full reverse from a stop or in reverse, else the brake
     const launch = a && stopped && rt > 0 && !b;
     return {
       th: rv ? 1 : rt,
-      br: launch || (b && !stopped) ? 1 : lt,
+      br: launch || (b && !rv) ? 1 : lt,
       st: 0 - rescale(cur[0], DEADZONE), // stick right = +axis = negative st
       rv,
     };
   }
 }
 
-/** Controls on the browser's window and navigator; vx: the own car's forward speed; blocked: a screen covers the race. */
-export function browserControls(bindings: Bindings, vx: () => number, blocked: () => boolean): Controls {
+/** Controls on the browser's window and navigator; vx, gear: the own car's; blocked: a screen covers the race. */
+export function browserControls(bindings: Bindings, vx: () => number, gear: () => number, blocked: () => boolean): Controls {
   return new Controls({
     target: window,
     doc: document,
@@ -258,6 +263,7 @@ export function browserControls(bindings: Bindings, vx: () => number, blocked: (
     now: () => performance.now() / 1000,
     bindings,
     vx,
+    gear,
     blocked,
   });
 }
