@@ -457,12 +457,12 @@ func finite(st State) bool {
 }
 
 func TestNoNaNUnderAbuse(t *testing.T) {
-	lo := Setup{1, 1, 50, 1, 1, 1, 0}
-	hi := Setup{11, 11, 70, 5, 10, 9, 3}
+	lo := Setup{1, 1, 50, 1, 1, 1, 0, 0}
+	hi := Setup{11, 11, 70, 5, 10, 9, 3, 3}
 	envs := []Env{{1, 0}, {0.9, 0}, {0.55, 0.9}}
 	r := rng(7)
 	for _, h := range []Handling{Arcade, Sim} {
-		for mask := range 1 << 7 {
+		for mask := range 1 << 8 {
 			var s Setup
 			for i := range s {
 				s[i] = lo[i]
@@ -500,13 +500,13 @@ func TestInputClean(t *testing.T) {
 }
 
 func TestSetupClamp(t *testing.T) {
-	if got := (Setup{0, 99, -5, 9, 0, 100, -1}).Clamp(); got != (Setup{1, 11, 50, 5, 1, 9, 0}) {
+	if got := (Setup{0, 99, -5, 9, 0, 100, -1, -1}).Clamp(); got != (Setup{1, 11, 50, 5, 1, 9, 0, 0}) {
 		t.Fatalf("clamp: %v", got)
 	}
-	if got := (Setup{6, 6, 58, 3, 5, 5, 4}).Clamp(); got[TC] != 3 {
-		t.Fatalf("clamp TC: %v", got)
+	if got := (Setup{6, 6, 58, 3, 5, 5, 4, 4}).Clamp(); got[TC] != 3 || got[ABS] != 3 {
+		t.Fatalf("clamp TC, ABS: %v", got)
 	}
-	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5, 1}) || DefaultSetup().Clamp() != DefaultSetup() {
+	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5, 1, 1}) || DefaultSetup().Clamp() != DefaultSetup() {
 		t.Fatalf("default: %v", DefaultSetup())
 	}
 }
@@ -789,6 +789,97 @@ func TestLaunchBeatsIdleStart(t *testing.T) {
 		t.Logf("%v TC %d: 0–100 km/h launch %.3f s, from idle %.3f s (gain %.3f s)", c.h, c.tc, with, without, without-with)
 		if !(with <= without-c.minGain) {
 			t.Errorf("%v TC %d: 0–100 km/h launch %.3f s, from idle %.3f s (want a gain ≥ %.2f s)", c.h, c.tc, with, without, c.minGain)
+		}
+	}
+}
+
+// settled is a car held at speed v and steer by a throttle/brake P-controller
+// for 3 s, in the gear the gearbox would hold.
+func settled(p *Params, v, steer float64) State {
+	st := rest()
+	st.VX = v
+	for st.Gear < 8 && st.VX*p.RPMPerMS[st.Gear-1] > shiftUp {
+		st.Gear++
+	}
+	for range 180 {
+		e := v - st.Speed()
+		Step(&st, p, Input{Steer: steer, Throttle: e * 2, Brake: -e * 0.5}.Clean(), asphalt)
+	}
+	return st
+}
+
+// brakeInCorner settles a left-hand corner at v and steer, then brakes fully
+// (keyboard ramp, 0.1 s) for 1.5 s with the steer held. It returns the
+// smallest yaw rate over the braking as a share of the settled one, and the
+// speed lost.
+func brakeInCorner(h Handling, s Setup, v, steer float64) (minShare, lost float64) {
+	p := NewParams(h, s, Damage{})
+	st := settled(&p, v, steer)
+	r0 := st.R
+	minShare = math.Inf(1)
+	brk := 0.0
+	for range 90 {
+		brk = min(1, brk+DT/0.1)
+		Step(&st, &p, Input{Steer: steer, Brake: brk}, asphalt)
+		minShare = min(minShare, st.R/r0)
+	}
+	return minShare, v - st.Speed()
+}
+
+// With ABS (Arcade always, Sim's default level 1) a full brake mid-corner
+// keeps the car turning the way it is steered: the yaw rate never turns the
+// other way nor falls below 40 % (Arcade) / 30 % (Sim, whose rear lightens
+// under braking at the limit: measured 33 %) of the settled one, and the car
+// slows. Sim without ABS locks the fronts at speed and goes straight on.
+func TestBrakingKeepsTurning(t *testing.T) {
+	for _, h := range []Handling{Arcade, Sim} {
+		for _, v := range []float64{30, 50, 70} {
+			for _, steer := range []float64{0.3, 1} {
+				share, lost := brakeInCorner(h, DefaultSetup(), v, steer)
+				if floor := map[Handling]float64{Arcade: 0.4, Sim: 0.3}[h]; share < floor || lost < 5 {
+					t.Errorf("%v %.0f m/s steer %.1f: yaw rate down to %.0f %%, %.1f m/s lost", h, v, steer, share*100, lost)
+				}
+			}
+		}
+	}
+	if share, _ := brakeInCorner(Sim, with(DefaultSetup(), ABS, 0), 70, 1); share > 0.2 {
+		t.Errorf("Sim ABS off at 70 m/s: yaw rate held at %.0f %%, fronts do not lock", share*100)
+	}
+}
+
+// keyboard turns key states into input the way the client's keyboard does:
+// steer rises at 3/s and returns at 5/s, the throttle ramps in 0.15 s and
+// drops at once.
+type keyboard struct{ steer, thr float64 }
+
+func (k *keyboard) input(left, gas bool) Input {
+	target, rate := 0.0, 5.0
+	if left {
+		target, rate = 1, 3
+	}
+	k.steer += min(max(target-k.steer, -rate*DT), rate*DT)
+	k.thr = 0
+	if gas {
+		k.thr = min(1, k.thr+DT/0.15)
+	}
+	return Input{Steer: k.steer, Throttle: k.thr}
+}
+
+// Arcade on a keyboard: tapping left with the throttle down, lifting for half
+// a second, then holding full lock never yaws the car right, nor slides it
+// more than ~7° (|VY|/VX < 0.12).
+func TestArcadeKeyboardTapsStayPlanted(t *testing.T) {
+	for _, v := range []float64{30, 50} {
+		p := NewParams(Arcade, DefaultSetup(), Damage{})
+		st := settled(&p, v, 0)
+		k := keyboard{}
+		for i := range 240 {
+			sec := float64(i) * DT
+			left := sec < 2.5 && int(sec*4)%2 == 0 || sec >= 2.5 && sec < 3
+			Step(&st, &p, k.input(left, !(sec > 1 && sec < 1.5)), asphalt)
+			if st.R < -0.15 || math.Abs(st.VY)/max(st.VX, 1) > 0.12 {
+				t.Fatalf("%.0f m/s, %.2f s: R %.3f VY %.2f VX %.1f", v, sec, st.R, st.VY, st.VX)
+			}
 		}
 	}
 }

@@ -35,8 +35,8 @@ func (h Handling) String() string {
 	return "arcade"
 }
 
-// Setup is the garage setup, indexed by FrontWing … TC.
-type Setup [7]int
+// Setup is the garage setup, indexed by FrontWing … ABS.
+type Setup [8]int
 
 const (
 	FrontWing = iota
@@ -45,16 +45,22 @@ const (
 	Gearing
 	Diff
 	SuspBalance
-	TC // traction control level: 0 off, 1..3 (Arcade always acts as 3)
+	TC  // traction control level: 0 off, 1..3 (Arcade always acts as 3)
+	ABS // anti-lock brakes level: 0 off, 1..3 (Arcade always acts as 1)
 )
 
-var setupMin, setupMax = Setup{1, 1, 50, 1, 1, 1, 0}, Setup{11, 11, 70, 5, 10, 9, 3}
+var setupMin, setupMax = Setup{1, 1, 50, 1, 1, 1, 0, 0}, Setup{11, 11, 70, 5, 10, 9, 3, 3}
 
-func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 1} }
+func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 1, 1} }
 
-// tcShares[level] is the share of the rear capacity the drive may ask for; 0 is
-// no limit (traction control off).
-var tcShares = [4]float64{0, 1.00, 0.90, tcShare}
+// Live is the setup a driver may change while racing (the controls on the
+// wheel); the rest is hardware, set in the garage.
+var Live = [4]int{BrakeBias, Diff, TC, ABS}
+
+// assistShares[level] is the share of an axle's grip left after cornering
+// that traction control (drive, rear) or ABS (brakes, each axle) allows; 0 is
+// no limit (off).
+var assistShares = [4]float64{0, 1.00, 0.90, tcShare}
 
 func (s Setup) Clamp() Setup {
 	for i := range s {
@@ -161,10 +167,7 @@ const (
 	arcadeVX   = 60.0  // Arcade steer scaling speed
 	revEngage  = 0.5   // reverse engages below this VX (m/s)
 	revTop     = 8.0   // reverse drive cuts out beyond this backward speed (m/s)
-	tcCut      = 0.5   // Arcade TC throttle factor
-	tcShare    = 0.8   // TC level 3 (and Arcade): drive ≤ this share of the rear capacity
-	absCut     = 0.6   // Arcade ABS brake factor
-	tcSlip     = 0.9   // TC engages above this fraction of αpk (rear)
+	tcShare    = 0.8   // TC level 3 (and Arcade's TC): share of the rear grip left after cornering
 	diffOn     = 0.3   // diff lock acts above this mapped throttle (pedal²)
 	diffStep   = 0.015 // rear lateral capacity loss per diff step × traction share
 	diffGrip   = 0.03  // rear longitudinal capacity gain per diff step under throttle
@@ -218,8 +221,9 @@ type Params struct {
 	Mu             float64 // handling grip
 	AlphaF, AlphaR float64 // peak slip (rad)
 	SteerRate      float64 // rad/s
-	Assists        bool    // Arcade: steer scaling, reactive TC, ABS, yaw cap
-	TCShare        float64 // predictive TC share, 0 = off (Sim: of the rear friction circle left; Arcade: of the rear capacity)
+	Assists        bool    // Arcade: steer scaling, yaw cap
+	TCShare        float64 // traction control: drive ≤ this share of the rear grip left after cornering, 0 = off
+	ABSShare       float64 // ABS: each axle's brake ≤ this share of its grip left after cornering, 0 = off
 
 	AeroF, AeroR float64 // downforce per v² (N·s²/m²)
 	DragK        float64 // aero drag per v² (N·s²/m²)
@@ -239,9 +243,9 @@ type Params struct {
 func NewParams(h Handling, s Setup, d Damage) Params {
 	s = s.Clamp()
 	d = Damage{clean(d.FrontWing, 0, 1), clean(d.RearWing, 0, 1), clean(d.Susp, 0, 1)}
-	p := Params{Mu: 1.00, AlphaF: 0.10, AlphaR: simAlphaR, SteerRate: 2.5, TCShare: tcShares[s[TC]]}
+	p := Params{Mu: 1.00, AlphaF: 0.10, AlphaR: simAlphaR, SteerRate: 2.5, TCShare: assistShares[s[TC]], ABSShare: assistShares[s[ABS]]}
 	if h == Arcade {
-		p = Params{Mu: 1.25, AlphaF: 0.14, AlphaR: arcAlphaR, SteerRate: 4.0, Assists: true, TCShare: tcShare}
+		p = Params{Mu: 1.25, AlphaF: 0.14, AlphaR: arcAlphaR, SteerRate: 4.0, Assists: true, TCShare: tcShare, ABSShare: 1}
 	}
 	// Every product feeding a sum is materialised; see the package comment.
 	fw, rw := float64(s[FrontWing]-1), float64(s[RearWing]-1)

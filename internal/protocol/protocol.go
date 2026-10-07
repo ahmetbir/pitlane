@@ -8,7 +8,7 @@ import "github.com/ahmetbir/roomkit/netproto"
 // github.com/ahmetbir/roomkit/netproto.
 
 // Version is the wire protocol version a hello must carry.
-const Version = 2
+const Version = 3
 
 // MaxClientMsg is the largest client message DecodeClient accepts.
 const MaxClientMsg = 1024

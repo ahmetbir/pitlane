@@ -86,6 +86,7 @@ type seg struct {
 type script struct {
 	h    car.Handling
 	tc   int
+	abs  int
 	vx   float64 // initial forward speed
 	segs []seg
 }
@@ -94,26 +95,27 @@ type script struct {
 func scripts() []script {
 	flick := []seg{{90, 100, 0, 127, 0}, {60, 100, 0, 0, 0}, {90, 100, 0, -127, 0}, {360, 100, 0, 0, 0}}
 	return []script{
-		{car.Sim, 1, 30, flick}, // 40..42: Sim TC 1..3, full throttle through a flick
-		{car.Sim, 2, 30, flick},
-		{car.Sim, 3, 30, flick},
-		{car.Arcade, 0, 30, flick}, // 43: Arcade acts as TC 3 whatever the setting
+		{car.Sim, 1, 1, 30, flick}, // 40..42: Sim TC 1..3, full throttle through a flick
+		{car.Sim, 2, 2, 30, flick},
+		{car.Sim, 3, 3, 30, flick},
+		{car.Arcade, 0, 0, 30, flick}, // 43: Arcade acts as TC 3 whatever the setting
 		// 44: Sim reverse from rest, steering while backing up, then forward again.
-		{car.Sim, 2, 0, []seg{{120, 100, 0, 0, 1}, {120, 100, 0, 127, 1}, {60, 0, 0, 0, 0}, {180, 100, 0, 0, 0}, {120, 0, 100, 0, 0}}},
+		{car.Sim, 2, 0, 0, []seg{{120, 100, 0, 0, 1}, {120, 100, 0, 127, 1}, {60, 0, 0, 0, 0}, {180, 100, 0, 0, 0}, {120, 0, 100, 0, 0}}},
 		// 45: Arcade reverse selected while rolling forward (brakes), then backs up and stops.
-		{car.Arcade, 2, 15, []seg{{200, 100, 0, 0, 1}, {100, 100, 0, -90, 1}, {120, 0, 100, 0, 0}, {180, 60, 0, 0, 0}}},
+		{car.Arcade, 2, 2, 15, []seg{{200, 100, 0, 0, 1}, {100, 100, 0, -90, 1}, {120, 0, 100, 0, 0}, {180, 60, 0, 0, 0}}},
 		// 46: Sim TC 2 launch: hold, release, steer, brake.
-		{car.Sim, 2, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}},
+		{car.Sim, 2, 3, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}},
 		// 47: Arcade launch on part throttle, then brake and throttle at speed down to a new hold.
-		{car.Arcade, 2, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}},
+		{car.Arcade, 2, 1, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}},
 		// 48: Sim reverse with the brake held at rest (held still), released (backs up), braked while backing up, held again.
-		{car.Sim, 1, 0, []seg{{120, 100, 100, 0, 1}, {150, 100, 0, 0, 1}, {120, 100, 100, 0, 1}, {210, 0, 0, 0, 0}}},
+		{car.Sim, 1, 0, 0, []seg{{120, 100, 100, 0, 1}, {150, 100, 0, 0, 1}, {120, 100, 100, 0, 1}, {210, 0, 0, 0, 0}}},
 	}
 }
 
 func scriptedCase(i int, sc script) carCase {
 	s := car.DefaultSetup()
 	s[car.TC] = sc.tc
+	s[car.ABS] = sc.abs
 	p := car.NewParams(sc.h, s, car.Damage{})
 	a := 0.3 * float64(i-carCases)
 	st := car.State{X: float64(10 * i), Z: -20, H: a, HX: math.Cos(a), HZ: math.Sin(a), VX: sc.vx, RPM: 4000, Gear: 1}
@@ -135,9 +137,9 @@ func makeCarCase(r *rng, i int) carCase {
 	if i%2 == 1 {
 		h = car.Sim
 	}
-	// TC cycles 0..3 over pairs of cases without drawing from r, so the TC 0
-	// cases replay exactly as before traction control levels existed.
-	s := car.Setup{r.rangeI(1, 11), r.rangeI(1, 11), r.rangeI(50, 70), r.rangeI(1, 5), r.rangeI(1, 10), r.rangeI(1, 9), i / 2 % 4}
+	// TC cycles 0..3 over pairs of cases and ABS over runs of eight, both
+	// without drawing from r, so the other setup values replay as before.
+	s := car.Setup{r.rangeI(1, 11), r.rangeI(1, 11), r.rangeI(50, 70), r.rangeI(1, 5), r.rangeI(1, 10), r.rangeI(1, 9), i / 2 % 4, i / 8 % 4}
 	var d car.Damage
 	switch {
 	case i >= 38: // front wing lost

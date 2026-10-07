@@ -32,13 +32,13 @@ type ClientMsg struct {
 	St int  `json:"st,omitempty"` // in: steer -127..127 (left +)
 	Rv bool `json:"rv,omitempty"` // in: reverse gear selected (the throttle drives it)
 
-	Setup *SetupInts `json:"setup,omitempty"` // ready: exactly 7 integers [fw, rw, bb, gear, diff, susp, tc]
+	Setup *SetupInts `json:"setup,omitempty"` // ready: exactly 8 integers [fw, rw, bb, gear, diff, susp, tc, abs]
 }
 
-// SetupInts is the wire setup: exactly seven integers.
-type SetupInts [7]int
+// SetupInts is the wire setup: exactly eight integers.
+type SetupInts [8]int
 
-// UnmarshalJSON accepts only an array of exactly seven integers.
+// UnmarshalJSON accepts only an array of exactly eight integers.
 func (s *SetupInts) UnmarshalJSON(b []byte) error {
 	var n []json.RawMessage
 	if err := json.Unmarshal(b, &n); err != nil || len(n) != len(s) {

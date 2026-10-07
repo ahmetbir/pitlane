@@ -31,7 +31,7 @@ bash scripts/smoke.sh          # after the client build: 4 bot players, gaps and
   `client/src/car` replays Go-written vectors (`testdata/vectors`).
 - **The server owns contact.** The client predicts its own car alone; car-to-car contact arrives
   as a correction.
-- **Wire.** Protocol version 2 in `internal/protocol` and `client/src/net/protocol.ts`, changed
+- **Wire.** Protocol version 3 in `internal/protocol` and `client/src/net/protocol.ts`, changed
   together. Notice and refusal codes never collide with roomkit's (tested). Snapshots start
   `{"t":"snap","tick":`.
 - **Storage keys** start with `pitlane.`; never rename one.

@@ -19,6 +19,19 @@ func Step(st *State, p *Params, in Input, env Env) {
 	target := float64(in.Steer * steerLock)
 	if p.Assists {
 		target = target / (1 + max(st.VX, 0)/arcadeVX)
+		if st.VX > slipVX {
+			// Arcade steering assist: the wheel turns no further than the
+			// front tyres' peak slip, αpk past the angle the car's motion
+			// already asks ((VY + a·R)/VX), so full lock on a keyboard is the
+			// most the fronts can give, not a slide past it. It never steers
+			// against the driver.
+			c := (st.VY + float64(cgFront*st.R)) / st.VX
+			if target > 0 {
+				target = min(target, max(c+p.AlphaF, 0))
+			} else {
+				target = max(target, min(c-p.AlphaF, 0))
+			}
+		}
 	}
 	step := float64(p.SteerRate * DT)
 	st.Delta += min(max(target-st.Delta, -step), step)
@@ -40,16 +53,6 @@ func Step(st *State, p *Params, in Input, env Env) {
 	thr, brk := in.Throttle, in.Brake
 	if in.Reverse && !rev {
 		thr, brk = 0, max(brk, thr)
-	}
-
-	// Assists.
-	if p.Assists {
-		if abs(ar) > tcSlip*p.AlphaR {
-			thr = float64(thr * tcCut)
-		}
-		if abs(af) > p.AlphaF {
-			brk = float64(brk * absCut)
-		}
 	}
 
 	// Normal loads: static + downforce ∓ longitudinal transfer.
@@ -122,8 +125,8 @@ func Step(st *State, p *Params, in Input, env Env) {
 	kR := max(1-float64(float64(latLoss*(1-p.LatF))*lat)/fzR, 0)
 	capF, capR = float64(capF*kF), float64(capR*kR)
 	fyF, fyR = float64(fyF*kF), float64(fyR*kR)
-	if !p.Assists && p.TCShare > 0 {
-		// Sim traction control caps the drive at TCShare × the rear grip left
+	if p.TCShare > 0 {
+		// Traction control caps the drive at TCShare × the rear grip left
 		// after cornering, √(capR² − fyR²), not of the whole rear capacity
 		// (level 1 = no excess wheelspin), so the throttle cannot take the
 		// rear's lateral grip. It acts before the diff, which then locks on
@@ -133,8 +136,7 @@ func Step(st *State, p *Params, in Input, env Env) {
 		if slip {
 			share = 1
 		}
-		left := math.Sqrt(max(float64(capR*capR)-float64(fyR*fyR), 0))
-		drive = min(drive, float64(share*left))
+		drive = min(drive, float64(share*gripLeft(capR, fyR)))
 	}
 	capX := capR // rear longitudinal capacity
 	if eff := min(float64(in.Throttle*in.Throttle), drive/max(capR, 1)); eff > diffOn {
@@ -162,18 +164,15 @@ func Step(st *State, p *Params, in Input, env Env) {
 	}
 	bF := min(float64(brk*p.BrakeF), capF)
 	bR := min(float64(brk*p.BrakeR), capR) // no diff gain on braking
-	fxF := -float64(ux * bF)
-	if p.Assists {
-		// Arcade traction control is predictive: the drive never asks more
-		// than TCShare (always tcShare in Arcade) of the rear's capacity, so a
-		// keyboard's full throttle still leaves the rear lateral grip to turn
-		// with. During a launch's clutch slip it allows the tyre's limit.
-		share := p.TCShare
-		if slip {
-			share = 1
-		}
-		drive = min(drive, float64(share*capR))
+	if p.ABSShare > 0 {
+		// ABS keeps each axle's brake within ABSShare × the grip cornering
+		// leaves it, so a full brake pedal neither locks the fronts (the car
+		// would go straight) nor the rears (it would spin): the tyres keep
+		// turning the car while it slows.
+		bF = min(bF, float64(p.ABSShare*gripLeft(capF, fyF)))
+		bR = min(bR, float64(p.ABSShare*gripLeft(capR, fyR)))
 	}
+	fxF := -float64(ux * bF)
 	if rev {
 		drive = -drive
 	}
@@ -255,6 +254,10 @@ func torque(rpm float64) float64 {
 	}
 	return t
 }
+
+// gripLeft is what is left of an axle's capacity after a lateral force fy:
+// √(cap² − fy²).
+func gripLeft(cap, fy float64) float64 { return math.Sqrt(max(float64(cap*cap)-float64(fy*fy), 0)) }
 
 // curve is the rational tyre curve 2s/(1+s²): linear, peak 1 at s=1, falls off.
 func curve(s float64) float64 { return 2 * s / (1 + float64(s*s)) }

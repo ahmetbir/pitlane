@@ -590,7 +590,7 @@ func (pr *Profile) brakeDecel(v, k float64) float64 {
 func (pr *Profile) Speed(i int) float64 { return pr.v[i] }
 
 // Setup is the bots' car setup: the default with traction control at level 3
-// (Arcade acts as level 3 whatever the setting).
+// (Arcade acts as level 3 whatever the setting) and ABS at its default.
 func Setup() car.Setup {
 	s := car.DefaultSetup()
 	s[car.TC] = 3

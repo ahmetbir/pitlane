@@ -18,11 +18,11 @@ func wire(t *testing.T, v any) string {
 func TestScriptMessages(t *testing.T) {
 	d := driver{create: protocol.ClientMsg{T: protocol.TCreate, Handling: "arcade", Contact: "soft", Laps: 3}}
 	for got, want := range map[string]string{
-		wire(t, d.Hello(2)):                    `{"t":"hello","v":2,"name":"lt2"}`,
+		wire(t, d.Hello(2)):                    `{"t":"hello","v":3,"name":"lt2"}`,
 		wire(t, d.Create()):                    `{"t":"create","handling":"arcade","contact":"soft","laps":3}`,
 		wire(t, d.Input(0, 0)):                 `{"t":"in","th":100}`,
 		wire(t, d.Input(0, 141)):               `{"t":"in","seq":141,"th":100,"st":59}`,
-		wire(t, d.React(0, 0, "welcome", nil)): `{"t":"ready","setup":[6,6,58,3,5,5,1]}`,
+		wire(t, d.React(0, 0, "welcome", nil)): `{"t":"ready","setup":[6,6,58,3,5,5,1,1]}`,
 	} {
 		if got != want {
 			t.Errorf("got %s want %s", got, want)
