@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  DT, Handling, clampSetup, frontWingLost, newParams, parseHandling, speed, step,
+  DT, Handling, clampSetup, frontWingLost, liveOf, newParams, parseHandling, speed, step, withLive,
   type Damage, type Params, type Setup, type State,
 } from "./car.ts";
 
@@ -111,4 +111,10 @@ test("the scripted vectors cover TC levels, reverse and launch", () => {
   const rh = sc[8].states;
   assert.ok(rh[0].X === sc[8].init.X && rh[0].VX === 0 && rh[0].Gear === 0, "case 48: reverse with the brake held stands still");
   assert.ok(rh.some((s) => s.VX < -5), "case 48 backs up once the brake is released");
+});
+
+test("withLive / liveOf mirror car.Setup.WithLive / LiveValues", () => {
+  const got = withLive([2, 3, 55, 4, 6, 7, 1, 1], [99, 0, 3, -1]);
+  assert.deepEqual(got, [2, 3, 70, 4, 1, 7, 3, 0]);
+  assert.deepEqual(liveOf(got), [70, 1, 3, 0]);
 });

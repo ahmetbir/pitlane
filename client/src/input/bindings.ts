@@ -4,8 +4,17 @@
 // one action at most. Rebinding a code that another action holds swaps them.
 import { t, type Key } from "../i18n/index.ts";
 
-export const ACTIONS = ["throttle", "brake", "brakeReverse", "left", "right", "launch", "camera", "lookBack", "help"] as const;
+export const ACTIONS = [
+  "throttle", "brake", "brakeReverse", "left", "right", "launch", "camera", "lookBack", "help",
+  "tcDown", "tcUp", "absDown", "absUp", "bbBack", "bbFwd", "diffDown", "diffUp",
+] as const;
 export type Action = (typeof ACTIONS)[number];
+
+/** The live setup controls (one press, one step; see game/live.ts). */
+export const LIVE_ACTIONS = ["tcDown", "tcUp", "absDown", "absUp", "bbBack", "bbFwd", "diffDown", "diffUp"] as const;
+export type LiveAction = (typeof LIVE_ACTIONS)[number];
+
+export const isLive = (a: Action): a is LiveAction => (LIVE_ACTIONS as readonly string[]).includes(a);
 export type Bindings = Record<Action, readonly string[]>;
 
 /** Key slots per action. */
@@ -21,6 +30,14 @@ const DEFAULTS: Bindings = {
   camera: ["KeyC"],
   lookBack: ["KeyR"],
   help: ["F1"],
+  tcDown: ["Digit1"],
+  tcUp: ["Digit2"],
+  absDown: ["Digit3"],
+  absUp: ["Digit4"],
+  bbBack: ["Digit5"],
+  bbFwd: ["Digit6"],
+  diffDown: ["Digit7"],
+  diffUp: ["Digit8"],
 };
 
 export function defaultBindings(): Bindings {
@@ -147,5 +164,6 @@ export function padRows(): KeyRow[] {
   return [
     ["RT [R2]", t("pad.throttle")], ["LT [L2]", t("pad.brake")], [t("pad.stickKey"), t("pad.steer")],
     ["B [○]", t("pad.reverse")], ["A [✕] + RT", t("pad.launch")],
+    [t("pad.dpadUpDown"), t("pad.bb")], [t("pad.dpadLeftRight"), t("pad.tc")],
   ];
 }

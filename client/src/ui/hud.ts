@@ -1,10 +1,12 @@
 // The race HUD: position, lap, lap times with the live delta, gaps to the
 // cars ahead and behind, sector colours, speed, gear (R in reverse), the rpm
-// bar, the traction control level, the launch indicator, the start lights
+// bar, the live setup (brake bias, TC, ABS, diff; the value just changed
+// lights up for HOT_MS), the launch indicator, the start lights
 // with the launch hint, hints (wrong way, off track), toasts and the mini-map.
 // Texts update at ~10 Hz (text()); the gauges and the map every frame.
 import { h, text } from "roomkit/ui/dom";
-import { launchRPM } from "../car/car.ts";
+import { ABS, BrakeBias, Diff, launchRPM, TC, type Setup } from "../car/car.ts";
+import { fixed } from "../i18n/format.ts";
 import { t } from "../i18n/index.ts";
 import type { Gap, SectorColour } from "../timing/standings.ts";
 import { fmtDelta, fmtGap, fmtLap, fmtTime, kmh } from "./fmt.ts";
@@ -16,6 +18,10 @@ const RPM_LIMIT = 13500;
 const RPM_SHIFT = 12800; // the gearbox's upshift point
 const GO_MS = 1200;
 const LAUNCH_READY = launchRPM - 100; // the bar turns green: the hold is at its rpm
+const HOT_MS = 1500; // a live value just changed stays lit this long
+
+/** The live readout's setup indices, in display order. */
+export const LIVE_ORDER: readonly number[] = [BrakeBias, TC, ABS, Diff];
 
 export type GapView = { name: string; gap: Gap };
 
@@ -52,6 +58,25 @@ export function tcBadge(level: number): string {
   return level > 0 ? `TC ${level}` : t("hud.tcOff");
 }
 
+/** The ABS badge: "ABS 2", "ABS OFF". */
+export function absBadge(level: number): string {
+  return level > 0 ? `ABS ${level}` : t("hud.absOff");
+}
+
+/**
+ * The live readout in LIVE_ORDER: "BB 58.0", "TC 1", "ABS 1", "DIFF 5"; in
+ * Arcade TC and ABS are the room's, shown as "TC A", "ABS A".
+ */
+export function liveParts(s: Readonly<Setup>, arcade: boolean): string[] {
+  const a = t("hud.arcadeAssist");
+  return [
+    `${t("hud.bb")} ${fixed(s[BrakeBias], 1)}`,
+    arcade ? `TC ${a}` : tcBadge(s[TC]),
+    arcade ? `ABS ${a}` : absBadge(s[ABS]),
+    `${t("hud.diff")} ${s[Diff]}`,
+  ];
+}
+
 /** Rpm as the bar's fill 0..1. */
 export function rpmFill(rpm: number): number {
   if (!Number.isFinite(rpm)) return 0;
@@ -78,7 +103,11 @@ export class Hud {
   private readonly gear = h("span", { class: "gear mono" });
   private readonly rpm = h("i", { class: "rpm-fill" });
   private readonly rpmBar = h("div", { class: "rpm" }, this.rpm);
-  private readonly tc = h("span", { class: "tc-badge" });
+  private readonly live = LIVE_ORDER.map(() => h("span", { class: "live-v" }));
+  private readonly liveEl = h("div", { class: "live" }, ...this.live.flatMap((el, i) => (i ? [h("i", { class: "live-sep", "aria-hidden": "true" }, "·"), el] : [el])));
+  private liveShown = "";
+  private hot = -1; // the LIVE_ORDER slot lit, −1 none
+  private hotTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly launch = h("span", { class: "launch-badge", hidden: true }, t("hud.launch"));
   private readonly launchHint = h("p", { class: "launch-hint" });
   private readonly hint = h("div", { class: "hint-banner", role: "status" });
@@ -106,7 +135,8 @@ export class Hud {
       h("div", { class: "hud-bc" },
         h("div", { class: "dash" }, this.speed, h("span", { class: "unit" }, t("hud.kmh")), h("span", { class: "gear-box" }, h("span", { class: "k" }, t("hud.gear")), this.gear)),
         this.rpmBar,
-        h("div", { class: "dash-tags" }, this.tc, this.launch)),
+        this.liveEl,
+        h("div", { class: "dash-tags" }, this.launch)),
       this.hint, this.toasts.el, this.lightsEl);
   }
 
@@ -129,10 +159,32 @@ export class Hud {
     this.hint.className = `hint-banner ${hint ? "on" : ""} ${v.wrongWay && !v.finished ? "warn" : ""}`;
   }
 
-  /** The traction control level in use (Arcade: 3). */
-  setTC(level: number): void {
-    text(this.tc, tcBadge(level));
-    this.tc.classList.toggle("off", level === 0);
+  /**
+   * The live setup the car drives with (every frame; the DOM is touched only
+   * on change); changed: the setup index a press just moved, lit for HOT_MS.
+   */
+  setLive(s: Readonly<Setup>, arcade: boolean, changed = -1): void {
+    const parts = liveParts(s, arcade);
+    const key = parts.join("|");
+    if (key !== this.liveShown) {
+      this.liveShown = key;
+      parts.forEach((p, i) => text(this.live[i], p));
+      this.live[1].classList.toggle("off", !arcade && s[TC] === 0);
+      this.live[2].classList.toggle("off", !arcade && s[ABS] === 0);
+      const titles = [t("garage.bb"), arcade ? t("hud.arcadeAssistTitle") : t("garage.tc"), arcade ? t("hud.arcadeAssistTitle") : t("garage.abs"), t("garage.diff")];
+      this.live.forEach((el, i) => el.setAttribute("title", titles[i]));
+    }
+    const slot = LIVE_ORDER.indexOf(changed);
+    if (slot < 0) return;
+    if (this.hot >= 0) this.live[this.hot].classList.remove("hot");
+    this.hot = slot;
+    this.live[slot].classList.add("hot");
+    if (this.hotTimer !== null) clearTimeout(this.hotTimer);
+    this.hotTimer = setTimeout(() => {
+      this.live[slot].classList.remove("hot");
+      this.hot = -1;
+      this.hotTimer = null;
+    }, HOT_MS);
   }
 
   /**
@@ -188,6 +240,7 @@ export class Hud {
   dispose(): void {
     this.toasts.clear();
     if (this.goTimer !== null) clearTimeout(this.goTimer);
+    if (this.hotTimer !== null) clearTimeout(this.hotTimer);
   }
 
   private gapLine(el: HTMLElement, label: string, g: GapView | null): void {

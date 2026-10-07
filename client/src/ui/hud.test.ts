@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLang } from "../i18n/index.ts";
-import { gapText, gearLabel, lapOf, launchReady, rpmFill, tcBadge } from "./hud.ts";
+import { absBadge, gapText, gearLabel, lapOf, launchReady, liveParts, rpmFill, tcBadge } from "./hud.ts";
 import { launchRPM } from "../car/car.ts";
 import { fastest, resultCells } from "./results.ts";
 
@@ -53,4 +53,14 @@ test("gear R in reverse, the launch bar at the launch rpm, the TC badge", () => 
   assert.equal(tcBadge(0), "TC OFF");
   setLang("tr", null);
   assert.equal(tcBadge(0), "TC KAPALI");
+});
+
+test("the live readout: BB 58.0 · TC 1 · ABS 1 · DIFF 5; Arcade TC/ABS A; off levels", () => {
+  setLang("en", null);
+  assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 1, 1], false), ["BB 58.0", "TC 1", "ABS 1", "DIFF 5"]);
+  assert.deepEqual(liveParts([6, 6, 63, 3, 9, 5, 0, 0], false), ["BB 63.0", "TC OFF", "ABS OFF", "DIFF 9"]);
+  assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 0, 2], true), ["BB 58.0", "TC A", "ABS A", "DIFF 5"]);
+  assert.equal(absBadge(3), "ABS 3");
+  setLang("tr", null);
+  assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 2, 0], false), ["FD 58,0", "TC 2", "ABS KAPALI", "DİF 5"]);
 });

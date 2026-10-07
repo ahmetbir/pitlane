@@ -2,7 +2,9 @@
 // model plus the barrier (race/world.ts moveCar). The server's other contact
 // (cars, kerbs it resolves after moveCar) arrives only as corrections; its
 // damage arrives as the welcome's and "dmg" messages (×1000, so Params are
-// within 0.05 % of the server's).
+// within 0.05 % of the server's). Each input's live setup values (lv: brake
+// bias, diff, TC, ABS) apply on top of the configured setup in the step that
+// replays that input, as the server applies them on the tick it consumes it.
 //
 // A snapshot row carries less than car.State: hx, hz are rebuilt from h; ax
 // and rpm are kept from the prediction (rpm is recomputed by the next step,
@@ -15,7 +17,7 @@
 // instead of matching it bit for bit.
 
 import { Reconciler, type Model, type Smoother } from "roomkit/predict/reconcile";
-import { newParams, type Damage, type Handling, type Params, type Setup, type State } from "../car/car.ts";
+import { newParams, withLive, type Damage, type Handling, type Params, type Setup, type State } from "../car/car.ts";
 import { carInput, type CarRow, type WireInput } from "../net/protocol.ts";
 import { moveCar } from "../race/world.ts";
 import type { Track } from "../track/track.ts";
@@ -82,6 +84,8 @@ export class Own {
   private setup: Setup;
   private dmg: Damage = { ...INTACT };
   private params: Params;
+  private liveKey = ""; // the lv liveParams were built for, "" = none
+  private liveParams: Params;
   private hard = false; // the next reconcile is drawn at once (marshal reset)
   private readonly smoother = new CarSmoother();
   private readonly r: Reconciler<OwnState, WireInput, OwnEnv>;
@@ -91,6 +95,7 @@ export class Own {
     this.handling = handling;
     this.setup = setup;
     this.params = newParams(handling, setup, this.dmg);
+    this.liveParams = this.params;
     const model: Model<OwnState, WireInput, OwnEnv> = { step: (s, w, env) => this.step(s, w, env) };
     this.r = new Reconciler(model, this.smoother, blank());
   }
@@ -158,7 +163,7 @@ export class Own {
     if (!env.running) return s;
     const st: OwnState = { ...s, dmg: { ...s.dmg } };
     const hint = { i: s.seg };
-    moveCar(st, this.params, carInput(w), this.track, hint);
+    moveCar(st, this.paramsFor(w), carInput(w), this.track, hint);
     st.seg = hint.i;
     return st;
   }
@@ -188,7 +193,19 @@ export class Own {
     return g;
   }
 
+  /** The Params of an input: the configured ones, or with its live values (cached while they repeat). */
+  private paramsFor(w: WireInput): Params {
+    if (!w.lv) return this.params;
+    const key = w.lv.join(",");
+    if (key !== this.liveKey) {
+      this.liveParams = newParams(this.handling, withLive(this.setup, w.lv), this.dmg);
+      this.liveKey = key;
+    }
+    return this.liveParams;
+  }
+
   private rebuild(): void {
     this.params = newParams(this.handling, this.setup, this.dmg);
+    this.liveKey = "";
   }
 }

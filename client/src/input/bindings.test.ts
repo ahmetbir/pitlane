@@ -56,7 +56,7 @@ test("key names and rows in both languages", () => {
   assert.equal(rows.length, ACTIONS.length);
   assert.deepEqual(rows[0], ["W / ↑", "Throttle"]);
   assert.ok(rows.some(([k]) => k === "Shift + W"));
-  assert.equal(padRows().length, 5);
+  assert.equal(padRows().length, 7);
   setLang("tr", null);
   assert.equal(keyName("Space"), "Boşluk");
   assert.equal(keyRows(defaultBindings())[0][1], "Gaz");

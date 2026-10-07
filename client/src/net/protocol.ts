@@ -1,4 +1,4 @@
-// Wire messages, version 2; mirrors internal/protocol (the Go JSON tags and
+// Wire messages, version 3; mirrors internal/protocol (the Go JSON tags and
 // documented examples are authoritative). Decoders check shapes only: the
 // server is trusted, a malformed message is dropped instead of crashing a frame.
 
@@ -17,7 +17,10 @@ export type Hello = { t: "hello"; v: number; name: string; tok?: string };
 export type Create = { t: "create"; handling?: HandlingName; contact?: ContactName; laps?: 3 | 5 | 8; listed?: boolean };
 export type Join = { t: "join"; code: string };
 export type Quick = { t: "quick" };
-/** One tick of input in wire units: th 0..100, br 0..100, st −127..127 (left +), rv reverse (omitted when off); seq starts at 1. */
+/**
+ * One tick of input in wire units: th 0..100, br 0..100, st −127..127 (left +), rv reverse (omitted when off),
+ * lv the live setup [bb, diff, tc, abs] (car Live order, absolute; omitted = no change); seq starts at 1.
+ */
 export type In = { t: "in"; seq: number } & WireInput;
 /** Garage setup [fw, rw, bb, gear, diff, susp, tc, abs]; grid phase only. */
 export type Ready = { t: "ready"; setup: Setup };
@@ -28,7 +31,7 @@ export type Ping = { t: "ping"; ts: number };
 export type Chat = { t: "chat"; id: number };
 export type ClientMsg = Hello | Create | Join | Quick | In | Ready | Start | Ping | Chat;
 
-export type WireInput = { th: number; br: number; st: number; rv?: true };
+export type WireInput = { th: number; br: number; st: number; rv?: true; lv?: readonly number[] };
 
 /** Go's math.Round: halves away from zero (Math.round rounds −2.5 to −2). */
 function goRound(x: number): number {

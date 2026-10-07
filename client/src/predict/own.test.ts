@@ -6,10 +6,13 @@
 // 8 m are drawn at once.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newParams } from "../car/car.ts";
+import { Handling, newParams, withLive } from "../car/car.ts";
+import { carInput } from "../net/protocol.ts";
 import { moveCar } from "../race/world.ts";
 import { finite, HANDLING, rng, rowOf, run, SETUP, startState, track, worst, type Trace } from "./drive.test-helper.ts";
-import { Own } from "./own.ts";
+import { angleDiff, Own } from "./own.ts";
+
+const INTACT = { frontWing: 0, rearWing: 0, susp: 0 };
 
 const QUANT_M = 0.03; // what replaying from a quantised snapshot may cost
 
@@ -181,4 +184,42 @@ test("a snapshot while reversing keeps gear R (no flash of 1)", () => {
   assert.equal(own.state().gear, 0);
   own.reconcile(rowOf(1, { ...st, vx: 3 }), 90, 91, { running: true }); // rolling forward: not reverse
   assert.ok(own.state().gear >= 1);
+});
+
+test("each input's live values drive its own step, also when replayed", () => {
+  const sim = Handling.Sim;
+  const setup = withLive(SETUP, [58, 5, 0, 1]); // TC off
+  const lvOf = (seq: number) => (seq <= 5 ? [58, 5, 0, 1] : seq <= 8 ? [62, 7, 3, 2] : [58, 5, 0, 1]);
+  const w = (seq: number) => ({ th: 100, br: 0, st: 20, lv: lvOf(seq) });
+  const s0 = startState(300, 0);
+  const row0 = rowOf(1, s0);
+  const own = new Own(track, sim, setup);
+  own.reset(row0, 0, 0);
+  const from = own.state();
+  // Predicted: every step with newParams of its input's live values (bit-exact with the Go step via the vectors).
+  const stepAll = (start: typeof from) => {
+    const st = { ...start, dmg: { ...start.dmg } };
+    for (let seq = 1; seq <= 10; seq++) {
+      const hint = { i: st.seg };
+      moveCar(st, newParams(sim, withLive(setup, lvOf(seq)), INTACT), carInput(w(seq)), track, hint);
+      st.seg = hint.i;
+    }
+    return st;
+  };
+  for (let seq = 1; seq <= 10; seq++) own.push(seq, w(seq), { running: true });
+  assert.deepEqual(own.state(), stepAll(from));
+  // Without the change the car drives differently (TC 3 cuts the drive from a standing start).
+  const flat = new Own(track, sim, setup);
+  flat.reset(row0, 0, 0);
+  for (let seq = 1; seq <= 10; seq++) flat.push(seq, { ...w(seq), lv: [58, 5, 0, 1] }, { running: true });
+  assert.notEqual(flat.state().vx, own.state().vx);
+  // Replayed from the server's row: the same per-input values, in order.
+  const like = own.state();
+  own.reconcile(row0, 0, 0, { running: true });
+  const h = like.h + angleDiff(row0.h, like.h);
+  const start = {
+    x: row0.x, z: row0.z, h, hx: Math.cos(h), hz: Math.sin(h), vx: row0.vx, vy: row0.vy, r: row0.r, delta: row0.delta,
+    rpm: like.rpm, gear: 1, ax: like.ax, launch: like.launch, dmg: { ...INTACT }, seg: track.locate(row0.x, row0.z, like.seg).i,
+  };
+  assert.deepEqual(own.state(), stepAll(start));
 });

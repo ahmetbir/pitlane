@@ -175,6 +175,18 @@ const tcShare = 0.8;
 export const assistShares: readonly number[] = [0, 1.0, 0.9, tcShare];
 /** The setup a driver may change while racing; the rest is hardware. */
 export const Live: readonly number[] = [BrakeBias, Diff, TC, ABS];
+
+/** s with the live values lv (in Live order) in place, clamped (car.Setup.WithLive). */
+export function withLive(s: Readonly<Setup>, lv: readonly number[]): Setup {
+  const out = s.slice() as Setup;
+  Live.forEach((k, i) => { out[k] = lv[i]; });
+  return clampSetup(out);
+}
+
+/** s's live values in Live order (car.Setup.LiveValues). */
+export function liveOf(s: Readonly<Setup>): number[] {
+  return Live.map((k) => s[k]);
+}
 const diffOn = 0.3;
 const diffStep = 0.015;
 const diffGrip = 0.03;

@@ -370,3 +370,59 @@ test("S and pad B brake a car rolling backwards out of reverse (after a spin)", 
   r.setGear(0);
   assert.deepEqual(r.c.sample(0.016), { th: 100, br: 0, st: 0, rv: true }, "pad B in reverse: reverse");
 });
+
+test("live controls: once per press on 1..8, key repeat ignored, nothing while blocked", () => {
+  const r = rig();
+  const order = ["tcDown", "tcUp", "absDown", "absUp", "bbBack", "bbFwd", "diffDown", "diffUp"] as const;
+  order.forEach((a, i) => {
+    const code = `Digit${i + 1}`;
+    r.down(code);
+    r.fire("keydown", { code, target: {}, repeat: true });
+    assert.equal(r.c.take(a), true, a);
+    assert.equal(r.c.take(a), false, `${a}: once per press`);
+    r.up(code);
+  });
+  r.fire("keydown", { code: "Digit2", target: {}, repeat: true }); // a repeat with no press before it
+  assert.equal(r.c.take("tcUp"), false, "a repeat alone is no press");
+  r.down("Digit5", { tagName: "INPUT" });
+  assert.equal(r.c.take("bbBack"), false, "typing");
+  r.setBlocked(true);
+  r.down("Digit6");
+  assert.equal(r.c.take("bbFwd"), false, "blocked");
+  r.up("Digit6");
+  r.setBlocked(false);
+  r.down("Digit6");
+  assert.equal(r.c.take("bbFwd"), true, "unblocked");
+});
+
+test("live controls rebind like the others", () => {
+  const r = rig(rebind(defaultBindings(), "tcUp", 0, "KeyT"));
+  r.down("KeyT");
+  assert.equal(r.c.take("tcUp"), true);
+  r.down("Digit2");
+  assert.equal(r.c.take("tcUp"), false, "the old key is free");
+});
+
+test("pad d-pad: up/down brake bias, left/right TC, edge-triggered, not while blocked", () => {
+  const r = rig();
+  const dpad = (btn: number): PadLike => ({
+    mapping: "standard", axes: [0, 0],
+    buttons: Array.from({ length: 16 }, (_, i) => ({ value: i === btn ? 1 : 0 })),
+  });
+  const cases = [[12, "bbFwd"], [13, "bbBack"], [14, "tcDown"], [15, "tcUp"]] as const;
+  for (const [btn, a] of cases) {
+    r.setPad(dpad(btn));
+    r.c.sample(0.016);
+    r.c.sample(0.016); // still held: no second press
+    assert.equal(r.c.take(a), true, a);
+    assert.equal(r.c.take(a), false, `${a}: once while held`);
+    r.setPad(dpad(-1));
+    r.c.sample(0.016);
+  }
+  r.setBlocked(true);
+  r.setPad(dpad(15));
+  r.c.sample(0.016);
+  r.setBlocked(false);
+  r.c.sample(0.016);
+  assert.equal(r.c.take("tcUp"), false, "pressed under the screen and still held: no press after it");
+});

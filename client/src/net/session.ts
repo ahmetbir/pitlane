@@ -6,7 +6,7 @@
 
 import { Socket, type Env, type Join, type Quick, type Status } from "roomkit/net/socket";
 import type { ShaperPolicy } from "roomkit/net/shaper";
-import { clampSetup, defaultSetup, Handling, parseHandling, setupMax, TC, type Input, type Setup } from "../car/car.ts";
+import { clampSetup, defaultSetup, parseHandling, type Handling, type Input, type Setup } from "../car/car.ts";
 import { Others } from "../predict/others.ts";
 import { Own, type OwnEnv, type OwnState } from "../predict/own.ts";
 import type { Track } from "../track/track.ts";
@@ -76,19 +76,18 @@ export class Session {
     return this.car;
   }
 
-  /** The traction control level the own car drives with: Arcade always 3, Sim the setup's. */
-  tcLevel(): number {
-    return this.handling === Handling.Arcade ? setupMax[TC] : this.setup[TC];
-  }
-
   setToken(tok: string): void {
     this.sock.setToken(tok);
   }
 
-  /** One 60 Hz tick of driver input: quantised, sent and predicted (from the own car's first snapshot). */
-  input(inp: Input): void {
+  /**
+   * One 60 Hz tick of driver input: quantised, sent and predicted (from the own car's first snapshot).
+   * lv: the live setup [bb, diff, tc, abs] the car drives with, sent with every input.
+   */
+  input(inp: Input, lv?: readonly number[]): void {
     if (!this.seated) return;
     const w = wireInput(inp);
+    if (lv) w.lv = [...lv];
     const seq = this.seq + 1;
     if (!this.sock.send({ t: "in", seq, ...w })) return;
     this.seq = seq;

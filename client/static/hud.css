@@ -75,11 +75,9 @@
 .hud-tools { display: flex; gap: 6px; align-items: center; }
 .hud-tool { opacity: 0.8; text-shadow: none; }
 .hud-tool:hover { opacity: 1; }
-.hud .dash-tags { display: flex; gap: 6px; justify-content: center; margin-top: 7px; min-height: 18px; }
-.hud .tc-badge, .hud .launch-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 99px; text-shadow: none; }
-.hud .tc-badge { color: #cfe9ff; background: rgba(90, 169, 255, 0.18); border: 1px solid rgba(90, 169, 255, 0.35); }
-.hud .tc-badge.off { color: #ffd0cc; background: rgba(226, 59, 48, 0.2); border-color: rgba(226, 59, 48, 0.45); }
-.hud .tc-badge:empty { display: none; }
+.hud .dash-tags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+.hud .dash-tags:not(:has(:not([hidden]))) { display: none; }
+.hud .launch-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 99px; text-shadow: none; }
 .hud .launch-badge { color: #111; background: var(--yellow); }
 .hud .launch-badge.ready { background: var(--green); }
 .hud .rpm-fill.launch { background: var(--yellow); }
@@ -87,3 +85,11 @@
 .hud .gear.rev { color: #ff8f88; }
 .hud .launch-hint { margin: 0; padding: 6px 14px; border-radius: 9px; background: rgba(10, 13, 18, 0.72); font-weight: 700; font-size: 0.92rem; text-align: center; max-width: min(520px, calc(100vw - 32px)); }
 @media (max-width: 700px) { .hud .launch-hint { font-size: 0.8rem; } .hud-tools .hud-tool:last-child { display: none; } }
+
+/* v1.2: the live setup readout (brake bias, TC, ABS, diff); the value just changed lights up */
+.hud .live { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 0; margin-top: 7px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; white-space: nowrap; color: #cfe9ff; }
+.hud .live-v { padding: 1px 5px; border-radius: 6px; transition: background-color 0.3s, color 0.3s; }
+.hud .live-sep { font-style: normal; margin: 0 2px; color: rgba(255, 255, 255, 0.45); }
+.hud .live-v.off { color: #ffb3ab; }
+.hud .live-v.hot { color: #111; background: var(--yellow); text-shadow: none; transition: none; }
+@media (max-width: 700px) { .hud .live { margin-top: 4px; font-size: 0.64rem; letter-spacing: 0; } .hud .live-v { padding: 1px 3px; } .hud .live-sep { margin: 0; } }

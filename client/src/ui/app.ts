@@ -1,17 +1,21 @@
 // One race session: the socket, the 3D view, the race loop and the in-session
 // screens (grid with the garage overlay, HUD, results, error), switched by
 // flow.ts from the server's messages, plus the controls card (shown once
-// before the first race, then on the help key) and the driver's manual.
+// before the first race, then on the help key) and the driver's manual. The
+// session holds one current setup: the garage's, which the live controls
+// (brake bias, diff, TC, ABS) change while racing; it is stored at once and
+// goes out with every input.
 // leave() tears everything down.
 import { RaceAudio } from "../audio/engine.ts";
 import { Book } from "../book/book.ts";
-import { speed, type Input } from "../car/car.ts";
+import { liveOf, speed, type Input } from "../car/car.ts";
 import { RaceView } from "../game/view.ts";
 import { startLoop } from "../game/loop.ts";
 import { RaceState } from "../game/racestate.ts";
 import { t } from "../i18n/index.ts";
 import { errorText, noticeText } from "../i18n/messages.ts";
-import { firstKey, type Action } from "../input/bindings.ts";
+import { firstKey, LIVE_ACTIONS, type Action } from "../input/bindings.ts";
+import { liveStep } from "../game/live.ts";
 import { browserControls, STOPPED_VX } from "../input/input.ts";
 import type { HandlingName, Results, ServerMsg } from "../net/protocol.ts";
 import { Session, socketURL } from "../net/session.ts";
@@ -25,7 +29,7 @@ import { garagePanel } from "./garage.ts";
 import { GridScreen } from "./grid.ts";
 import type { Entry } from "./home.ts";
 import { Hud } from "./hud.ts";
-import { loadSettings, loadSetup, loadToken, saveSettings, storeToken } from "./prefs.ts";
+import { loadSettings, loadSetup, loadToken, saveSettings, saveSetup, storeToken } from "./prefs.ts";
 import { resultsView } from "./results.ts";
 import { focusFirst, Toast } from "./widgets.ts";
 
@@ -81,12 +85,12 @@ export function play(o: PlayOpts): void {
   const manualBtn = tool(t("hud.manual"), t("hud.manual"), () => book.open());
   const chord = (a: Action) => `${firstKey(keys, a)}+${firstKey(keys, "throttle")}`;
   const hud = new Hud(track.segs, [leaveBtn, helpBtn, manualBtn], t("hud.launchHint", { chord1: chord("brake"), chord2: chord("launch") }));
-  let shownTC = -1;
+  let setup = loadSetup(); // the current setup: the garage's, changed by the live controls
   const toast = new Toast(); // over the garage overlay
   const audio = new RaceAudio(settings.volume);
   let throttle = 0;
   const grid = new GridScreen({
-    ready: () => session.ready(loadSetup()),
+    ready: () => session.ready((setup = loadSetup())),
     start: () => session.start(),
     garage: () => {
       garageOpen = true;
@@ -131,6 +135,7 @@ export function play(o: PlayOpts): void {
 
   function closeGarage(): void {
     garageOpen = false;
+    setup = loadSetup();
     render(true);
   }
   const onKey = (e: KeyboardEvent) => {
@@ -220,7 +225,7 @@ export function play(o: PlayOpts): void {
     controls,
     input: (i: Input) => {
       throttle = i.throttle;
-      session.input(i);
+      session.input(i, liveOf(setup));
     },
     driving: () => race?.currentPhase() === "lights" || race?.currentPhase() === "racing" || race?.currentPhase() === "finish",
     frame: (dt: number, cam: boolean, back: boolean) => {
@@ -228,6 +233,15 @@ export function play(o: PlayOpts): void {
       if (cam) view.toggleCamera();
       if (controls.take("help") && (flow.view === "grid" || flow.view === "race")) toggleCard();
       view.lookBack(back);
+      const arcade = handling === "arcade";
+      let changed = -1; // the setup index a live control just moved
+      for (const a of LIVE_ACTIONS) {
+        if (!controls.take(a) || flow.view !== "race") continue; // presses off the race go nowhere
+        const r = liveStep(setup, a, arcade);
+        if (r.changed < 0) continue;
+        setup = saveSetup(r.setup);
+        changed = r.changed;
+      }
       session.frame(dt);
       const st = session.ownCar();
       const others = session.otherCars();
@@ -236,8 +250,7 @@ export function play(o: PlayOpts): void {
       if (flow.view !== "race") return;
       if (st) audio.frame(dt, st, throttle, others);
       if (st) hud.gauges(speed(st), st.gear, st.rpm, st.launch && Math.abs(st.vx) < STOPPED_VX);
-      const tc = session.tcLevel();
-      if (tc !== shownTC) hud.setTC((shownTC = tc));
+      hud.setLive(setup, arcade, changed);
       hud.drawMap(st ? [...others, { id: car, x: st.x, z: st.z }] : others, car);
     },
     text: () => {

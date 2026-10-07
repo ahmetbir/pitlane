@@ -88,6 +88,20 @@ test("handshake: hello v3 then the create", () => {
   ]);
 });
 
+test("the live setup goes out with every input as lv", () => {
+  const { s, conns } = harness();
+  const c = conns[0];
+  c.open();
+  c.recv(WELCOME);
+  c.recv(snap(100, 0));
+  s.input({ throttle: 1, brake: 0, steer: 0 }, [60, 4, 2, 0]);
+  s.input({ throttle: 1, brake: 0, steer: 0 });
+  assert.deepEqual(c.sent.filter((m) => m.t === "in"), [
+    { t: "in", seq: 1, th: 100, br: 0, st: 0, lv: [60, 4, 2, 0] },
+    { t: "in", seq: 2, th: 100, br: 0, st: 0 },
+  ]);
+});
+
 test("inputs wait for the own car's first snapshot, then go out quantised with seq from its ack", () => {
   const { s, conns, msgs } = harness();
   const c = conns[0];

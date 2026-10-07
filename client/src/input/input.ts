@@ -8,10 +8,13 @@
 // the launch key held with the throttle while stopped holds the car on the
 // brakes at full revs (car.ts launch), released it launches.
 // Shift is a game key (the launch chord); Ctrl, Alt and Meta chords are the
-// browser's and are ignored.
+// browser's and are ignored. The live setup controls (brake bias, diff, TC,
+// ABS) are one-shot presses like the camera: once per press, key repeat
+// ignored, nothing while a screen covers the race; on the pad the d-pad
+// (up/down brake bias forward/back, left/right TC down/up), edge-triggered.
 
 import { wireInput, type WireInput } from "../net/protocol.ts";
-import { actionMap, defaultBindings, type Action, type Bindings } from "./bindings.ts";
+import { actionMap, defaultBindings, isLive, type Action, type Bindings, type LiveAction } from "./bindings.ts";
 
 const STEER_RISE = 3; // per second toward ±1
 const STEER_RETURN = 5; // per second toward 0
@@ -31,6 +34,8 @@ const PAD_A = 0;
 const PAD_B = 1;
 const PAD_LT = 6;
 const PAD_RT = 7;
+/** D-pad buttons (up, down, left, right) and the live control each one presses. */
+const PAD_DPAD: readonly (readonly [number, LiveAction])[] = [[12, "bbFwd"], [13, "bbBack"], [14, "tcDown"], [15, "tcUp"]];
 
 export type PadLike = { mapping?: string; axes: readonly number[]; buttons: readonly { value: number; pressed?: boolean }[] } | null;
 
@@ -76,7 +81,8 @@ export class Controls {
   // Held keys by the code that pressed them: a keyup releases what its keydown started,
   // whatever the bindings or the typed character say by then ("?" pressed, "/" released).
   private readonly keysDown = new Map<string, Action>();
-  private readonly pressed = new Set<Action>(); // one-shot presses: camera, help
+  private readonly pressed = new Set<Action>(); // one-shot presses: camera, help, the live controls
+  private dpad = PAD_DPAD.map(() => false); // d-pad buttons down at the last poll
   private keys: Map<string, Action>;
   private th = 0;
   private br = 0;
@@ -133,7 +139,7 @@ export class Controls {
     return this.take("camera");
   }
 
-  /** True once per press of a one-shot action (camera, help); clears it. */
+  /** True once per press of a one-shot action (camera, help, a live control); clears it. */
   take(a: Action): boolean {
     return this.pressed.delete(a);
   }
@@ -145,6 +151,7 @@ export class Controls {
 
   sample(dtS: number): WireInput {
     if (this.deps.blocked?.()) { // the car coasts; keys held under the screen do not count after it
+      this.dpadEdges(this.findPad(), false);
       this.keysDown.clear();
       this.th = this.br = this.st = 0;
       return wireInput({ throttle: 0, brake: 0, steer: 0 });
@@ -198,7 +205,7 @@ export class Controls {
       return;
     }
     if (NO_DEFAULT.has(e.code)) e.preventDefault?.();
-    if ((a === "camera" || a === "help") && !this.holding(a)) this.pressed.add(a);
+    if ((a === "camera" || a === "help" || (isLive(a) && !e.repeat)) && !this.holding(a)) this.pressed.add(a);
     this.keysDown.set(e.code, a);
   }
 
@@ -208,6 +215,34 @@ export class Controls {
     this.th = this.br = this.st = 0;
   }
 
+  /** The first pad with the standard mapping, or null. */
+  private findPad(): PadLike {
+    try {
+      const pads = this.deps.getGamepads();
+      for (let i = 0; i < pads.length; i++) {
+        const p = pads[i];
+        if (p && p.mapping === "standard") return p;
+      }
+    } catch {
+      // no pads
+    }
+    return null;
+  }
+
+  /** Records the d-pad; fire: a button that went down presses its live control. True when one went down. */
+  private dpadEdges(pad: PadLike, fire: boolean): boolean {
+    let any = false;
+    this.dpad = PAD_DPAD.map(([b, a], i) => {
+      const on = pad !== null && padButton(pad, b) > 0.5;
+      if (on && !this.dpad[i] && fire) {
+        this.pressed.add(a);
+        any = true;
+      }
+      return on;
+    });
+    return any;
+  }
+
   /**
    * The active pad's input, or null when no standard pad moved within
    * GAMEPAD_HOLD_S. B reverses at full throttle from a stop or in reverse
@@ -215,22 +250,14 @@ export class Controls {
    */
   private pollPad(stopped: boolean, canReverse: boolean): { th: number; br: number; st: number; rv: boolean } | null {
     const now = this.deps.now();
-    let pad: PadLike = null;
-    try {
-      const pads = this.deps.getGamepads();
-      for (let i = 0; i < pads.length; i++) {
-        const p = pads[i];
-        if (p && p.mapping === "standard") { pad = p; break; }
-      }
-    } catch {
-      pad = null;
-    }
+    const pad = this.findPad();
+    if (this.dpadEdges(pad, true)) this.active = now;
     if (!pad) {
       this.prev = null;
       this.padActiveUntil = -Infinity;
       return null;
     }
-    const btn = (i: number) => pad.buttons[i]?.value ?? (pad.buttons[i]?.pressed ? 1 : 0);
+    const btn = (i: number) => padButton(pad, i);
     const cur = [pad.axes[0] ?? 0, btn(PAD_LT), btn(PAD_RT), btn(PAD_A), btn(PAD_B)].map((v) => (Number.isFinite(v) ? v : 0));
     const prev = this.prev ?? cur;
     this.prev = cur;
@@ -252,6 +279,10 @@ export class Controls {
       rv,
     };
   }
+}
+
+function padButton(pad: NonNullable<PadLike>, i: number): number {
+  return pad.buttons[i]?.value ?? (pad.buttons[i]?.pressed ? 1 : 0);
 }
 
 /** Controls on the browser's window and navigator; vx, gear: the own car's; blocked: a screen covers the race. */
