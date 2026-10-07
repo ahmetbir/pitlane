@@ -90,7 +90,7 @@ type script struct {
 	segs []seg
 }
 
-// scripts are the TC, reverse and launch cases (40..47), each 600 ticks.
+// scripts are the TC, reverse and launch cases (40..48), each 600 ticks.
 func scripts() []script {
 	flick := []seg{{90, 100, 0, 127, 0}, {60, 100, 0, 0, 0}, {90, 100, 0, -127, 0}, {360, 100, 0, 0, 0}}
 	return []script{
@@ -106,6 +106,8 @@ func scripts() []script {
 		{car.Sim, 2, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}},
 		// 47: Arcade launch on part throttle, then brake and throttle at speed down to a new hold.
 		{car.Arcade, 2, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}},
+		// 48: Sim reverse with the brake held at rest (held still), released (backs up), braked while backing up, held again.
+		{car.Sim, 1, 0, []seg{{120, 100, 100, 0, 1}, {150, 100, 0, 0, 1}, {120, 100, 100, 0, 1}, {210, 0, 0, 0, 0}}},
 	}
 }
 

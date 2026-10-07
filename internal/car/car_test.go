@@ -641,6 +641,29 @@ func zeroTo(h Handling, su Setup, v float64, launch bool) float64 {
 	return math.Inf(1)
 }
 
+// Reverse with the brake held at rest is a hold: no creep, whatever the
+// throttle, in both handlings; released, the car backs up.
+func TestReverseWithBrakeHolds(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		for _, th := range []float64{0, 0.5, 1} {
+			p := NewParams(h, DefaultSetup(), Damage{})
+			st := rest()
+			for range 60 * 3 {
+				Step(&st, &p, Input{Throttle: th, Brake: 1, Reverse: true}, asphalt)
+			}
+			if st.X != 0 || st.Z != 0 || st.VX != 0 || st.Launch {
+				t.Errorf("%v throttle %.1f: moved to (%.4f, %.4f) VX %.4f launch %v; want held still", h, th, st.X, st.Z, st.VX, st.Launch)
+			}
+			for range 60 {
+				Step(&st, &p, Input{Throttle: 1, Reverse: true}, asphalt)
+			}
+			if !(st.VX < -2) || st.Gear != 0 {
+				t.Errorf("%v: released, VX %.2f gear %d; want backing up in reverse", h, st.VX, st.Gear)
+			}
+		}
+	}
+}
+
 // Reverse from rest at full throttle: the car backs up to about revTop and
 // holds it, in gear 0, in both handlings.
 func TestReverseTopSpeed(t *testing.T) {

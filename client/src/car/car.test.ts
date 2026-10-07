@@ -54,7 +54,7 @@ test("DT matches Go", () => {
 });
 
 test("newParams matches Go bit for bit", () => {
-  assert.equal(file.cases.length, 48); // 40 random, then the TC, reverse and launch scripts
+  assert.equal(file.cases.length, 49); // 40 random, then the TC, reverse and launch scripts
   file.cases.forEach((c, i) => {
     const [h, ok] = parseHandling(c.handling);
     assert.ok(ok);
@@ -104,8 +104,11 @@ test("non-finite input is ignored", () => {
 
 test("the scripted vectors cover TC levels, reverse and launch", () => {
   const sc = file.cases.slice(40);
-  assert.deepEqual(sc.map((c) => [c.handling, c.setup[6]]), [["sim", 1], ["sim", 2], ["sim", 3], ["arcade", 0], ["sim", 2], ["arcade", 2], ["sim", 2], ["arcade", 2]]);
+  assert.deepEqual(sc.map((c) => [c.handling, c.setup[6]]), [["sim", 1], ["sim", 2], ["sim", 3], ["arcade", 0], ["sim", 2], ["arcade", 2], ["sim", 2], ["arcade", 2], ["sim", 1]]);
   assert.ok(sc[4].states.some((s) => s.Gear === 0 && s.VX < -7.5), "case 44 backs up at about 8 m/s");
   assert.ok(sc[5].inputs.some((w) => w[3] === 1) && sc[5].states.some((s) => s.Gear === 0), "case 45 reverses");
   for (const c of [sc[6], sc[7]]) assert.ok(c.states.some((s) => s.Launch && s.VX === 0 && s.RPM > 4000), "launch hold");
+  const rh = sc[8].states;
+  assert.ok(rh[0].X === sc[8].init.X && rh[0].VX === 0 && rh[0].Gear === 0, "case 48: reverse with the brake held stands still");
+  assert.ok(rh.some((s) => s.VX < -5), "case 48 backs up once the brake is released");
 });

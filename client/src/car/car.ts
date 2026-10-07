@@ -327,6 +327,8 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
 
   // Launch: the brakes hold the car while the engine revs; released, the clutch slips.
   const hold = inp.reverse !== true && abs(st.vx) < launchVX && inp.brake >= launchBrk && inp.throttle > 0;
+  // Reverse with the brake held while (nearly) stopped: the brakes hold the car as on a launch hold, without the revs.
+  const revHold = inp.reverse === true && abs(st.vx) < launchVX && inp.brake >= launchBrk;
   let eng = st.rpm;
   if (!(eng >= idleRPM)) eng = idleRPM;
   else if (eng > limitRPM) eng = limitRPM;
@@ -343,7 +345,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const slip = st.launch && !hold; // the clutch slips after a launch hold
 
   let drive = 0.0; // magnitude; reverse flips its sign below
-  if (thr > 0 && !hold && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
+  if (thr > 0 && !hold && !revHold && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
 
   // Lateral slip forces, then lateral transfer as grip loss on each axle.
   const baseMu = mu * p.mu * p.gripDmg;
