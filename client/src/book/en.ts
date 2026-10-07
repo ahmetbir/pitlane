@@ -65,6 +65,7 @@ const handling = () => [
   list(
     [`Normal grip; no stability aid. You pick ABS in the garage: Off, 1, 2 or 3; the default is ${F.simDefaultABS()}. With it off, steer while braking hard and the front tyres spend all their grip on the brakes: the car goes straight on.`],
     [`You pick traction control in the garage: Off, 1, 2 or 3. The default is ${F.simDefaultTC()}.`],
+    ["Steering assist: full lock is held a little below the front tyres' peak grip, so on a keyboard full lock turns the car instead of sliding the nose wide."],
   ),
   sub("Traction control levels"),
   p("Traction control (TC) lets the throttle use only a share of the grip the rear tyres have left after cornering. The smaller the share, the safer the car, and the slower it accelerates."),
@@ -146,7 +147,7 @@ const contact = () => [
   p("A room is created with one of three contact rules; a quick race opens with soft contact."),
   list(
     [b("Ghost"), ": cars pass through each other. The barriers still stop you."],
-    [b("Soft"), ": cars push each other and both lose a little speed while they touch; no damage."],
+    [b("Soft"), ": cars push each other apart along their real outline (5.4 × 1.9 m) and both lose a little speed while they touch; no damage."],
     [b("Full"), ": real collisions. Hitting cars and barriers causes damage."],
   ),
   sub("Damage"),

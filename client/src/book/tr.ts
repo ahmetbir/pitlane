@@ -65,6 +65,7 @@ const handling = () => [
   list(
     [`Normal tutuş; denge yardımı yok. ABS'yi garajda sen seçersin: Kapalı, 1, 2 ya da 3; varsayılan ${F.simDefaultABS()}. Kapalıyken sert frenlerken direksiyon çevirirsen ön lastiklerin bütün tutuşu frene gider ve araba düz gider.`],
     [`Çekiş kontrolünü garajda sen seçersin: Kapalı, 1, 2 ya da 3. Varsayılan ${F.simDefaultTC()}.`],
+    ["Direksiyon yardımı: direksiyon sonuna kadar kırılsa bile ön lastiklerin tutuş sınırının biraz altında tutulur; klavyede tam direksiyon burnu dışarı kaydırmaz, arabayı döndürür."],
   ),
   sub("Çekiş kontrolü seviyeleri"),
   p("Çekiş kontrolü (TC), arka lastiğin virajda kullanmadığı tutuşun yalnız bir payını gaza bırakır. Pay küçüldükçe araba daha güvenli, ama daha yavaş hızlanır."),
@@ -146,7 +147,7 @@ const contact = () => [
   p("Oda kurulurken üç temas kuralından biri seçilir; hızlı yarış yumuşak temasla açılır."),
   list(
     [b("Hayalet"), ": arabalar birbirinin içinden geçer. Bariyerler yine durdurur."],
-    [b("Yumuşak"), ": arabalar itişir ve temas sürdükçe ikisi de biraz hız kaybeder; hasar yok."],
+    [b("Yumuşak"), ": arabalar gerçek gövde ölçüsüyle (5,4 × 1,9 m) itişir ve temas sürdükçe ikisi de biraz hız kaybeder; hasar yok."],
     [b("Tam"), ": gerçek çarpışma. Arabalara ve bariyerlere vurmak hasar verir."],
   ),
   sub("Hasar"),
