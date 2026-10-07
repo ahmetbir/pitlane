@@ -9,7 +9,7 @@ import { RaceState } from "../game/racestate.ts";
 import { t } from "../i18n/index.ts";
 import { errorText, noticeText } from "../i18n/messages.ts";
 import { browserControls } from "../input/input.ts";
-import type { Results, ServerMsg } from "../net/protocol.ts";
+import type { HandlingName, Results, ServerMsg } from "../net/protocol.ts";
 import { Session, socketURL } from "../net/session.ts";
 import { kiyi } from "../track/track.ts";
 import { fill, h } from "roomkit/ui/dom";
@@ -61,6 +61,7 @@ export function play(o: PlayOpts): void {
   let garageOpen = false;
   let car = 0;
   let laps = 3;
+  let handling: HandlingName = "arcade";
   let results: Results | null = null;
   let view: RaceView | null = null;
   let race: RaceState | null = null;
@@ -74,7 +75,7 @@ export function play(o: PlayOpts): void {
         break;
       case "grid":
         if (garageOpen) {
-          fill(ui, h("div", { class: "screen overlay" }, h("section", { class: "panel" }, h("h2", {}, t("garage.title")), garagePanel(closeGarage))), toast.el);
+          fill(ui, h("div", { class: "screen overlay" }, h("section", { class: "panel" }, h("h2", {}, t("garage.title")), garagePanel(closeGarage, handling))), toast.el);
           focusFirst(ui);
         } else if (force || !ui.contains(grid.el)) fill(ui, grid.el);
         break;
@@ -120,6 +121,7 @@ export function play(o: PlayOpts): void {
         if (location.pathname !== `/r/${m.code}`) history.replaceState(null, "", `/r/${m.code}`);
         car = m.car;
         laps = m.laps;
+        handling = m.handling;
         if (!view) {
           view = openView(o.canvas, (c) => new RaceView(c, track, m.contact, settings.camera));
           if (!view) {

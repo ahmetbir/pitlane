@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaultSetup, type Setup } from "../car/car.ts";
 import { defaultBindings, rebind } from "../input/bindings.ts";
-import { adjust, SLIDERS } from "./garage.ts";
+import { adjust, SLIDERS, tcEffect, tcName, TC_LEVELS } from "./garage.ts";
+import { setLang } from "../i18n/index.ts";
 import { defaultSettings, loadSettings, loadSetup, saveSettings, saveSetup, storedName, storeName } from "./prefs.ts";
 
 class Mem {
@@ -65,3 +66,12 @@ test("settings and name persist and validate", () => {
   assert.equal(storedName(st), "Ayrton");
 });
 
+test("garage: traction control Off..3 with its effect and measured 0–100", () => {
+  assert.deepEqual(TC_LEVELS, [0, 1, 2, 3]);
+  setLang("en", null);
+  assert.equal(tcName(0), "Off");
+  assert.match(tcEffect(1), /^1: .* Sim 0–100 km\/h ≈ 4\.4 s\.$/);
+  setLang("tr", null);
+  assert.match(tcEffect(3), /0–100 km\/sa ≈ 5,8 sn\.$/);
+  assert.deepEqual(adjust(defaultSetup(), 6, 0), [6, 6, 58, 3, 5, 5, 0]);
+});

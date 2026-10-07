@@ -170,4 +170,10 @@ kbd { font-family: var(--mono); font-size: 0.82em; font-weight: 700; color: #fff
 @keyframes pulse { 50% { border-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { .keycap.listening { animation: none; } }
 
+/* Garage: traction control */
+.slider.tc .seg { align-self: flex-start; }
+.seg-btn:disabled { cursor: default; }
+.seg-btn:disabled[aria-checked="false"] { opacity: 0.4; }
+.lock-note { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; color: var(--ok); background: rgba(52, 199, 123, 0.12); border-radius: 99px; padding: 2px 9px; }
+
 .table.keys { width: auto; } .table.keys td:last-child { padding-right: 0; }
