@@ -47,10 +47,14 @@ export function play(o: PlayOpts): void {
   const settings = loadSettings();
   const keys = settings.keys;
   const book = new Book(() => ({ keys }));
-  // While the manual or the controls card is up the car gets neutral input and coasts.
-  const controls = browserControls(keys, () => session.ownCar()?.vx ?? 0, () => session.ownCar()?.gear ?? 1, () => book.isOpen() || card.isOpen());
+  // While the manual or a controls card the player opened is up the car gets neutral input and
+  // coasts; the automatic first-race card never blocks (it closes itself at the lights).
+  const controls = browserControls(keys, () => session.ownCar()?.vx ?? 0, () => session.ownCar()?.gear ?? 1,
+    () => book.isOpen() || (card.isOpen() && !autoCard));
+  let autoCard = false; // the card on screen is the automatic first-race one
   const card = new ControlsCard({
     closed: () => {
+      autoCard = false;
       if (settings.seenControls) return;
       settings.seenControls = true;
       saveSettings({ ...loadSettings(), seenControls: true });
@@ -68,7 +72,12 @@ export function play(o: PlayOpts): void {
     });
     return b;
   };
-  const helpBtn = tool("?", t("hud.help"), () => card.toggle(keys));
+  /** The player opens or closes the card (help key, ? button): it blocks driving while up. */
+  const toggleCard = () => {
+    autoCard = false;
+    card.toggle(keys);
+  };
+  const helpBtn = tool("?", t("hud.help"), toggleCard);
   const manualBtn = tool(t("hud.manual"), t("hud.manual"), () => book.open());
   const chord = (a: Action) => `${firstKey(keys, a)}+${firstKey(keys, "throttle")}`;
   const hud = new Hud(track.segs, [leaveBtn, helpBtn, manualBtn], t("hud.launchHint", { chord1: chord("brake"), chord2: chord("launch") }));
@@ -136,8 +145,12 @@ export function play(o: PlayOpts): void {
       if (flow.view === "race" && before !== "race") controls.touch(); // idle counts from the start
       if (flow.view !== "grid") garageOpen = false;
       render(true);
-      if ((flow.view === "grid" || flow.view === "race") && !settings.seenControls && !card.isOpen()) card.open(keys);
+      if ((flow.view === "grid" || flow.view === "race") && flow.phase !== "lights" && !settings.seenControls && !card.isOpen()) {
+        autoCard = true;
+        card.open(keys);
+      }
     }
+    if (autoCard && card.isOpen() && flow.phase === "lights") card.close(); // the start: the first-race card goes
   };
 
   const onMsg = (m: ServerMsg) => {
@@ -213,7 +226,7 @@ export function play(o: PlayOpts): void {
     frame: (dt: number, cam: boolean, back: boolean) => {
       if (!view) return;
       if (cam) view.toggleCamera();
-      if (controls.take("help") && (flow.view === "grid" || flow.view === "race")) card.toggle(keys);
+      if (controls.take("help") && (flow.view === "grid" || flow.view === "race")) toggleCard();
       view.lookBack(back);
       session.frame(dt);
       const st = session.ownCar();
