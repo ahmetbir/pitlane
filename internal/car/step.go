@@ -162,10 +162,10 @@ func Step(st *State, p *Params, in Input, env Env) {
 	fxF := -float64(ux * bF)
 	if p.Assists {
 		// Arcade traction control is predictive: the drive never asks more
-		// than tcShare of the rear's capacity, so a keyboard's full throttle
-		// still leaves the rear lateral grip to turn with.
-		// During a launch's clutch slip it allows the tyre's limit.
-		share := tcShare
+		// than TCShare (always tcShare in Arcade) of the rear's capacity, so a
+		// keyboard's full throttle still leaves the rear lateral grip to turn
+		// with. During a launch's clutch slip it allows the tyre's limit.
+		share := p.TCShare
 		if slip {
 			share = 1
 		}

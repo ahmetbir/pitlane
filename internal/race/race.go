@@ -387,7 +387,8 @@ func (r *Race) Autopilot(id CarID) car.Input {
 
 // marshal puts every unfinished car that is not drivable and has been slower than resetSpeed
 // for resetTicks racing ticks back on the racing line, pointing down the track and at rest
-// (there is no reverse gear: a car nose-first against the wall cannot leave by itself). The
+// (bots never reverse, so a bot nose-first against the wall cannot leave by itself; a
+// human can back out, and the marshals step in only after resetTicks). The
 // drop spot is its own s or the nearest spot up to dropBack behind it with no car within
 // dropFree (see dropSpot). Lap and timing state are kept; the time lost is the penalty. A due
 // reset waits (retried every tick) while traffic would arrive on top of it (clearForReset), for
@@ -485,7 +486,7 @@ func (r *Race) free(c *Car, x, z float64) bool {
 	return true
 }
 
-// drivable: the car can drive away on its own (no reverse gear needed): on the asphalt and
+// drivable: the car can drive away forwards (without reversing): on the asphalt and
 // pointing within 45° of the track direction. The marshals leave such a car alone, however
 // long it stands (an idle player is gone round, not moved).
 func (r *Race) drivable(c *Car) bool {

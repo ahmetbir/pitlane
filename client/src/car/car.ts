@@ -387,7 +387,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const bF = Math.min(brk * p.brakeF, capF);
   const bR = Math.min(brk * p.brakeR, capR);
   const fxF = -(ux * bF);
-  if (p.assists) drive = Math.min(drive, (slip ? 1 : tcShare) * capR);
+  if (p.assists) drive = Math.min(drive, (slip ? 1 : p.tcShare) * capR);
   if (rev) drive = -drive;
   const fxR = clamp(drive - ux * bR, capX);
   fyF = circle(fxF, fyF - uy * bF, capF);
