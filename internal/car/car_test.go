@@ -582,13 +582,14 @@ func TestArcadeKeyboardFullThrottleTurnsWithoutSpinning(t *testing.T) {
 	}
 }
 
-// Sim traction control level 3 keeps a keyboard's full throttle from
-// spinning the car at 25/40/60 m/s; with TC off the same driving spins it.
+// Sim traction control at every level (1..3) keeps a keyboard's full
+// throttle from spinning the car at 12/18/25/40/60 m/s with the default
+// setup at three differential settings; with TC off the same driving spins it.
 func TestSimTCLevels(t *testing.T) {
 	worst := [4]float64{}
 	for tc := 0; tc <= 3; tc++ {
 		for _, diff := range []int{1, 5, 10} {
-			for _, v0 := range []float64{25, 40, 60} {
+			for _, v0 := range []float64{12, 18, 25, 40, 60} {
 				for _, hold := range []float64{0.2, 1.5} {
 					slip, spun := keyboardSlip(Sim, with(with(DefaultSetup(), Diff, diff), TC, tc), v0, hold)
 					if spun {
@@ -596,8 +597,8 @@ func TestSimTCLevels(t *testing.T) {
 					}
 					worst[tc] = max(worst[tc], slip)
 					t.Logf("TC %d diff %2d v0 %2.0f hold %.1f: max slip %5.1f° spun %v", tc, diff, v0, hold, slip, spun)
-					if tc == 3 && (slip > 20 || spun) {
-						t.Errorf("TC 3 diff %d v0 %.0f hold %.1fs: slip %.1f° (spin)", diff, v0, hold, slip)
+					if tc >= 1 && (slip > 20 || spun) {
+						t.Errorf("TC %d diff %d v0 %.0f hold %.1fs: slip %.1f° (spin)", tc, diff, v0, hold, slip)
 					}
 				}
 			}
