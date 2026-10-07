@@ -9,7 +9,7 @@ const goExamples = (): string[] => {
   return src.split("\n").filter((l) => /^\/\/\t\{"t":/.test(l)).map((l) => l.slice(3));
 };
 
-test("version is 2", () => {
+test("version is 3", () => {
   assert.equal(VERSION, 3);
 });
 

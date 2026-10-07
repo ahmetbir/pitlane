@@ -869,9 +869,10 @@ func (k *keyboard) input(left, gas bool) Input {
 		target, rate = 1, 3
 	}
 	k.steer += min(max(target-k.steer, -rate*DT), rate*DT)
-	k.thr = 0
 	if gas {
 		k.thr = min(1, k.thr+DT/0.15)
+	} else {
+		k.thr = 0
 	}
 	return Input{Steer: k.steer, Throttle: k.thr}
 }

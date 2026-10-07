@@ -1,7 +1,8 @@
 // The garage: six setup sliders and the traction control and ABS choices, each with
 // its live value and a one-line effect, and a reset to the default. Every
 // change is stored (pitlane.setup) at once; the grid sends the stored setup
-// with "ready". In an Arcade room traction control is always on (level 3).
+// with "ready". In an Arcade room traction control (level 3) and ABS (level 1)
+// are always on.
 import { h, text } from "roomkit/ui/dom";
 import { ABS, clampSetup, defaultSetup, Handling, setupMax, setupMin, TC, type Setup } from "../car/car.ts";
 import { zeroTo100 } from "../car/measure.ts";
@@ -74,7 +75,7 @@ const ABS_ROW: LevelRow = { label: "garage.abs", fx: (v) => t(`garage.abs${v}Fx`
 
 /**
  * The garage panel; done is called with the stored setup. handling: the
- * room's (in a session); Arcade locks traction control on.
+ * room's (in a session); Arcade locks traction control and ABS on.
  */
 export function garagePanel(done: (s: Setup) => void, handling?: HandlingName): HTMLElement {
   let setup = loadSetup();
