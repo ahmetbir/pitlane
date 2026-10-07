@@ -279,6 +279,26 @@ func (r *Race) Ready(id CarID, s car.Setup) {
 	c.P = car.NewParams(r.set.Handling, c.Driver.Setup, c.St.Dmg)
 }
 
+// Live sets a human car's live setup values (car.Live order, clamped by
+// car.Setup.Clamp), the controls on the wheel: call it before the Step that
+// consumes the input carrying them. On a change the driver's setup takes them
+// and the params are rebuilt, so the next Step drives with them; a takeover,
+// reconnect or new grid carries them on. Any phase. Bots and unknown ids are
+// ignored. In Arcade TC and ABS are the handling's (NewParams), brake bias and
+// diff apply.
+func (r *Race) Live(id CarID, lv [4]int) {
+	c := r.car(id)
+	if c == nil || !c.Driver.Human {
+		return
+	}
+	s := c.Driver.Setup.WithLive(lv)
+	if s == c.Driver.Setup {
+		return
+	}
+	c.Driver.Setup = s
+	c.P = car.NewParams(r.set.Handling, s, c.St.Dmg)
+}
+
 // Start lets the creator leave the grid early.
 func (r *Race) Start(id CarID) {
 	if r.phase == Grid && id != 0 && id == r.creator {

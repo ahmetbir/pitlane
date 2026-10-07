@@ -133,8 +133,11 @@ func (m *Match) notice(id room.PlayerID, code, msg string, out room.Outbox) {
 // phase became grid), lights, laps, wings, resets, results.
 func (m *Match) Step(inputs map[room.PlayerID]protocol.Input, out room.Outbox) {
 	clear(m.in)
-	for id, i := range inputs {
+	for id, i := range inputs { // each input touches its own car only: map order does not matter
 		m.in[race.CarID(id)] = i.Car()
+		if lv, ok := i.Live(); ok {
+			m.r.Live(race.CarID(id), lv)
+		}
 	}
 	ev := m.r.Step(m.in)
 	m.syncDamage(out)

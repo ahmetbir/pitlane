@@ -1,4 +1,4 @@
-// Package protocol defines Pitlane's JSON wire messages (version 2): flat
+// Package protocol defines Pitlane's JSON wire messages (version 3): flat
 // objects with a "t" type, the roomkit envelope plus game fields.
 package protocol
 

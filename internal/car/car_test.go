@@ -511,6 +511,17 @@ func TestSetupClamp(t *testing.T) {
 	}
 }
 
+func TestWithLive(t *testing.T) {
+	s := Setup{2, 3, 55, 4, 6, 7, 1, 1}
+	got := s.WithLive([4]int{99, 0, 3, -1})
+	if got != (Setup{2, 3, 70, 4, 1, 7, 3, 0}) {
+		t.Fatalf("WithLive: %v", got)
+	}
+	if got.LiveValues() != [4]int{70, 1, 3, 0} || s.WithLive(s.LiveValues()) != s {
+		t.Fatalf("LiveValues: %v", got.LiveValues())
+	}
+}
+
 func TestParseHandling(t *testing.T) {
 	for _, h := range []Handling{Arcade, Sim} {
 		if got, ok := ParseHandling(h.String()); !ok || got != h {

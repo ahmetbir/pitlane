@@ -335,3 +335,78 @@ func TestReadySetupClamped(t *testing.T) {
 		t.Fatal("Ready accepted outside Grid")
 	}
 }
+
+// A live change (the controls on the wheel) reaches the car on the Step that
+// consumes it: TC 0 → 3 from a standing start cuts the drive on that very step.
+func TestLiveChangeAppliesOnItsTick(t *testing.T) {
+	start := func() (*Race, CarID) {
+		r := New(Settings{Handling: car.Sim, Contact: Ghost, Laps: 3, Seed: 5}, track.Kiyi())
+		a, _ := r.Seat("a", "p")
+		s := car.DefaultSetup()
+		s[car.TC] = 0
+		r.Ready(a, s)
+		for r.Phase() != Racing {
+			r.Step(nil)
+		}
+		return r, a
+	}
+	r, a := start()
+	ref, _ := start()
+	c, rc := r.car(a), ref.car(a)
+	if c.St != rc.St || c.P != rc.P {
+		t.Fatal("the two races differ before the change")
+	}
+	p0 := c.P
+	r.Live(a, c.Driver.Setup.LiveValues()) // the same values: nothing to rebuild
+	if c.P != p0 {
+		t.Fatal("unchanged live values rebuilt the params")
+	}
+	want := c.Driver.Setup
+	want[car.TC] = 3
+	r.Live(a, want.LiveValues())
+	if c.Driver.Setup != want || c.P != car.NewParams(car.Sim, want, c.St.Dmg) || c.P.TCShare == p0.TCShare {
+		t.Fatalf("setup %v, TC share %v (was %v)", c.Driver.Setup, c.P.TCShare, p0.TCShare)
+	}
+	in := map[CarID]car.Input{a: {Throttle: 1}}
+	r.Step(in)
+	ref.Step(in)
+	if !(c.St.VX < rc.St.VX) {
+		t.Fatalf("TC 3 should cut the drive on the next step: vx %v vs %v with TC off", c.St.VX, rc.St.VX)
+	}
+}
+
+func TestLiveIgnoresBotsAndClamps(t *testing.T) {
+	r := newRace(1)
+	a, _ := r.Seat("a", "")
+	bot := r.car(2)
+	s, p := bot.Driver.Setup, bot.P
+	r.Live(2, [4]int{70, 10, 0, 0})
+	r.Live(99, [4]int{70, 10, 0, 0})
+	if bot.Driver.Setup != s || bot.P != p {
+		t.Fatal("a bot took live values")
+	}
+	r.Live(a, [4]int{999, -3, 7, -1})
+	if got := r.car(a).Driver.Setup.LiveValues(); got != [4]int{70, 1, 3, 0} {
+		t.Fatalf("not clamped: %v", got)
+	}
+}
+
+// A reconnect gets the car back with the setup as last changed while racing.
+func TestLiveChangeSurvivesReconnect(t *testing.T) {
+	r := newRace(2)
+	a, _ := r.Seat("a", "p")
+	for r.Phase() != Racing {
+		r.Step(nil)
+	}
+	r.Live(a, [4]int{52, 9, 2, 3})
+	want := r.car(a).Driver.Setup
+	r.Unseat(a)
+	r.Step(nil)
+	if id, ok := r.Seat("a", "p"); !ok || id != a {
+		t.Fatalf("reseated in %d", id)
+	}
+	c := r.car(a)
+	if c.Driver.Setup != want || c.Driver.Setup.LiveValues() != [4]int{52, 9, 2, 3} || c.P != car.NewParams(car.Arcade, want, c.St.Dmg) {
+		t.Fatalf("setup %v want %v", c.Driver.Setup, want)
+	}
+}

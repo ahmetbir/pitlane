@@ -57,6 +57,22 @@ func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 1, 1} }
 // wheel); the rest is hardware, set in the garage.
 var Live = [4]int{BrakeBias, Diff, TC, ABS}
 
+// WithLive is s with the live values lv (in Live order) in place, clamped.
+func (s Setup) WithLive(lv [4]int) Setup {
+	for i, k := range Live {
+		s[k] = lv[i]
+	}
+	return s.Clamp()
+}
+
+// LiveValues is s's live values in Live order.
+func (s Setup) LiveValues() (lv [4]int) {
+	for i, k := range Live {
+		lv[i] = s[k]
+	}
+	return lv
+}
+
 // assistShares[level] is the share of an axle's grip left after cornering
 // that traction control (drive, rear) or ABS (brakes, each axle) allows; 0 is
 // no limit (off).

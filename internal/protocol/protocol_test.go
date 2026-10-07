@@ -73,6 +73,41 @@ func TestDecodeClamps(t *testing.T) {
 	}
 }
 
+func TestDecodeLive(t *testing.T) {
+	m, err := DecodeClient([]byte(`{"t":"in","seq":3,"th":50,"lv":[60,7,2,0]}`))
+	if err != nil || m.Lv == nil || *m.Lv != (LiveInts{60, 7, 2, 0}) {
+		t.Fatalf("lv: %+v %v", m, err)
+	}
+	in := m.Input()
+	if lv, ok := in.Live(); !ok || lv != [4]int{60, 7, 2, 0} || in != (Input{Th: 50, Lv: [4]int8{60, 7, 2, 0}, HasLv: true}) {
+		t.Fatalf("input lv: %+v", in)
+	}
+	// Out of range: clamped to the setup ranges (bb 50..70, diff 1..10, tc 0..3, abs 0..3).
+	m, err = DecodeClient([]byte(`{"t":"in","lv":[999,-4,9,-1]}`))
+	if err != nil || *m.Lv != (LiveInts{70, 1, 3, 0}) {
+		t.Fatalf("clamp: %+v %v", m, err)
+	}
+	if lv, _ := (ClientMsg{T: TIn, Lv: &LiveInts{10, 99, -5, 7}}).Input().Live(); lv != [4]int{50, 10, 0, 3} {
+		t.Fatalf("Input clamps a message not built by DecodeClient: %v", lv)
+	}
+	// Omitted: no change.
+	m, _ = DecodeClient([]byte(`{"t":"in","th":10}`))
+	if _, ok := m.Input().Live(); ok || m.Lv != nil {
+		t.Fatalf("absent lv: %+v", m)
+	}
+	// Latch: an input without lv takes the dropped one's; one with lv keeps its own.
+	with, without := Input{Lv: [4]int8{55, 3, 1, 2}, HasLv: true}, Input{Th: 9}
+	if got := without.Latch(with); got != (Input{Th: 9, Lv: with.Lv, HasLv: true}) {
+		t.Fatalf("latch: %+v", got)
+	}
+	if got := with.Latch(Input{Lv: [4]int8{70, 1, 0, 0}, HasLv: true}); got != with {
+		t.Fatalf("latch keeps the newer lv: %+v", got)
+	}
+	if b, _ := json.Marshal(ClientMsg{T: TIn, Seq: 1, Lv: &LiveInts{58, 5, 1, 1}}); string(b) != `{"t":"in","seq":1,"lv":[58,5,1,1]}` {
+		t.Fatalf("marshal: %s", b)
+	}
+}
+
 func TestDecodeRefuses(t *testing.T) {
 	for name, s := range map[string]string{
 		"unknown type": `{"t":"nope"}`,
@@ -95,6 +130,10 @@ func TestDecodeRefuses(t *testing.T) {
 		"setup null":   `{"t":"ready","setup":null}`,
 		"setup absent": `{"t":"ready"}`,
 		"seq -1":       `{"t":"in","seq":-1}`,
+		"lv 3":         `{"t":"in","lv":[58,5,1]}`,
+		"lv 5":         `{"t":"in","lv":[58,5,1,1,1]}`,
+		"lv float":     `{"t":"in","lv":[58.5,5,1,1]}`,
+		"lv string":    `{"t":"in","lv":"58"}`,
 		"big":          `{"t":"hello","name":"` + strings.Repeat("a", MaxClientMsg) + `"}`,
 	} {
 		if _, err := DecodeClient([]byte(s)); err == nil {

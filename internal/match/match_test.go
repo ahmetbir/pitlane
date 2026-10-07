@@ -421,13 +421,16 @@ func TestStepAllocs(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Ace")
 	m.Step(nil, out)
-	in := map[room.PlayerID]protocol.Input{a: {}}
+	in := map[room.PlayerID]protocol.Input{a: {Lv: [4]int8{60, 4, 2, 2}, HasLv: true}}
 	out.take()
 	n := testing.AllocsPerRun(50, func() {
 		m.syncGrid(out, false)
 		clear(m.in)
 		for id, i := range in {
 			m.in[race.CarID(id)] = i.Car()
+			if lv, ok := i.Live(); ok {
+				m.r.Live(race.CarID(id), lv)
+			}
 		}
 	})
 	if n != 0 {
@@ -513,5 +516,40 @@ func TestDamageCheckAllocs(t *testing.T) {
 	out.take()
 	if n := testing.AllocsPerRun(50, func() { m.syncDamage(out) }); n != 0 {
 		t.Fatalf("%v allocs per unchanged damage check", n)
+	}
+}
+
+// Live values in an input reach the driver's setup on the tick it is applied, and a reconnect's welcome carries them.
+func TestInputLiveValues(t *testing.T) {
+	m, out := newMatch(), &fakeOut{}
+	seat := func() room.PlayerID {
+		id, err := m.Join(room.Who{Name: "Ace", Pilot: "p"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Welcome(id, "ABCD", "", out)
+		return id
+	}
+	a := seat()
+	out.players = append(out.players, a)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
+	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
+	in := (protocol.ClientMsg{T: protocol.TIn, Th: 100, Lv: &protocol.LiveInts{64, 8, 2, 0}}).Input()
+	m.Step(map[room.PlayerID]protocol.Input{a: in}, out)
+	c := m.r.Cars()[a-1]
+	if c.Driver.Setup.LiveValues() != [4]int{64, 8, 2, 0} || c.P != car.NewParams(car.Arcade, c.Driver.Setup, c.St.Dmg) {
+		t.Fatalf("setup %v", c.Driver.Setup)
+	}
+	m.Step(map[room.PlayerID]protocol.Input{a: {Th: 100}}, out) // no lv: no change
+	if c.Driver.Setup.LiveValues() != [4]int{64, 8, 2, 0} {
+		t.Fatalf("an input without lv changed the setup: %v", c.Driver.Setup)
+	}
+	m.Leave(a)
+	m.Step(nil, out)
+	out.take()
+	b := seat()
+	ws := of[protocol.Welcome](out.take())
+	if b != a || len(ws) != 1 || car.Setup(ws[0].Setup).LiveValues() != [4]int{64, 8, 2, 0} {
+		t.Fatalf("welcome %+v", ws)
 	}
 }
