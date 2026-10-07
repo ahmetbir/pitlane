@@ -108,6 +108,34 @@ func TestDecodeLive(t *testing.T) {
 	}
 }
 
+// ClientMsg.Latch as roomkit's socket uses it: inputs over the rate are latched into a held
+// message (held.Latch(dropped)), which the next admitted input then takes (m.Latch(held)).
+func TestClientMsgLatchCarriesLive(t *testing.T) {
+	lv := func(bb int) *LiveInts { return &LiveInts{bb, 5, 1, 1} }
+	var held ClientMsg
+	held = held.Latch(ClientMsg{T: TIn, Seq: 4, Lv: lv(55)})
+	held = held.Latch(ClientMsg{T: TIn, Seq: 5, Lv: lv(56)})
+	held = held.Latch(ClientMsg{T: TIn, Seq: 6}) // no lv: the newest lv so far stays
+	if held.Lv == nil || *held.Lv != *lv(56) {
+		t.Fatalf("held %+v", held.Lv)
+	}
+	if m := (ClientMsg{T: TIn, Seq: 7, Th: 3}).Latch(held); m.Lv == nil || *m.Lv != *lv(56) || m.Seq != 7 || m.Th != 3 {
+		t.Fatalf("admitted without lv: %+v", m)
+	}
+	if m := (ClientMsg{T: TIn, Seq: 7, Lv: lv(60)}).Latch(held); *m.Lv != *lv(60) {
+		t.Fatalf("admitted lv replaced: %+v", *m.Lv)
+	}
+	if m := (ClientMsg{T: TIn, Seq: 7}).Latch(ClientMsg{}); m.Lv != nil {
+		t.Fatal("nothing held: no lv")
+	}
+	// The pointer is copied: changing the result does not change the held message.
+	m := (ClientMsg{T: TIn, Seq: 8}).Latch(held)
+	m.Lv[0] = 70
+	if held.Lv[0] != 56 {
+		t.Fatal("latch shares the held lv")
+	}
+}
+
 func TestDecodeRefuses(t *testing.T) {
 	for name, s := range map[string]string{
 		"unknown type": `{"t":"nope"}`,
@@ -131,6 +159,7 @@ func TestDecodeRefuses(t *testing.T) {
 		"setup absent": `{"t":"ready"}`,
 		"seq -1":       `{"t":"in","seq":-1}`,
 		"lv 3":         `{"t":"in","lv":[58,5,1]}`,
+		"lv null":      `{"t":"in","lv":null}`,
 		"lv 5":         `{"t":"in","lv":[58,5,1,1,1]}`,
 		"lv float":     `{"t":"in","lv":[58.5,5,1,1]}`,
 		"lv string":    `{"t":"in","lv":"58"}`,

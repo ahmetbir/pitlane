@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,7 +93,7 @@ func DecodeClient(b []byte) (ClientMsg, error) {
 	if err := netproto.CheckHeader(m.Head(), ChatMax); err != nil {
 		return ClientMsg{}, err
 	}
-	if m.T == TCreate && !validCreate(m) || m.T == TReady && m.Setup == nil {
+	if m.T == TCreate && !validCreate(m) || m.T == TReady && m.Setup == nil || m.Lv == nil && lvNull(b) {
 		return ClientMsg{}, ErrBadField
 	}
 	m.Th, m.Br, m.St = clamp(m.Th, 0, 100), clamp(m.Br, 0, 100), clamp(m.St, -127, 127)
@@ -101,6 +102,18 @@ func DecodeClient(b []byte) (ClientMsg, error) {
 		m.Lv = &lv
 	}
 	return m, nil
+}
+
+// lvNull reports whether b has an "lv" key whose value is null (a present lv
+// must be four integers; json leaves the pointer nil for null, as for absent).
+func lvNull(b []byte) bool {
+	if !bytes.Contains(b, []byte(`"lv"`)) {
+		return false
+	}
+	var raw struct {
+		Lv json.RawMessage `json:"lv"`
+	}
+	return json.Unmarshal(b, &raw) == nil && string(raw.Lv) == "null"
 }
 
 func validCreate(m ClientMsg) bool {
@@ -184,5 +197,16 @@ func (m ClientMsg) Input() Input {
 	return in
 }
 
-// Latch returns m: Pitlane inputs have no one-shot presses to carry over.
-func (m ClientMsg) Latch(ClientMsg) ClientMsg { return m }
+// Latch carries the live setup of an input dropped over its rate, as
+// Input.Latch does in the room's queue: m takes d's lv when it has none, or
+// when d is the newer input (higher seq). roomkit calls it both ways round
+// (held.Latch(dropped), admitted.Latch(held)); the held accumulator keeps seq
+// 0, so the newest dropped lv wins and an admitted lv is never replaced.
+// Pitlane has no one-shot presses.
+func (m ClientMsg) Latch(d ClientMsg) ClientMsg {
+	if d.Lv != nil && (m.Lv == nil || d.Seq > m.Seq) {
+		lv := *d.Lv
+		m.Lv = &lv
+	}
+	return m
+}
