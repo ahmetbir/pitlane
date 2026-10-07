@@ -176,8 +176,6 @@ export const EN: Area<typeof TR> = {
   "hud.go": "GO!",
   "hud.kmh": "km/h",
   "hud.lapsDown": { one: "+{n} lap", other: "+{n} laps" },
-  "hud.tcOff": "TC OFF",
-  "hud.absOff": "ABS OFF",
   "hud.bb": "BB",
   "hud.diff": "DIFF",
   "hud.arcadeAssist": "A",

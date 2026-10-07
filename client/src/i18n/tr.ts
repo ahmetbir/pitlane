@@ -173,8 +173,6 @@ export const TR = {
   "hud.go": "BAŞLA!",
   "hud.kmh": "km/sa",
   "hud.lapsDown": "+{n} tur",
-  "hud.tcOff": "TC KAPALI",
-  "hud.absOff": "ABS KAPALI",
   "hud.bb": "FD",
   "hud.diff": "DİF",
   "hud.arcadeAssist": "A",

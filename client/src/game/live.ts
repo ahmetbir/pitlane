@@ -11,12 +11,15 @@ const STEP: Record<LiveAction, readonly [index: number, delta: number]> = {
   diffDown: [Diff, -1], diffUp: [Diff, 1],
 };
 
-/** s after one press of a, and the setup index that moved (−1: none, at a limit or locked by Arcade). */
-export function liveStep(s: Readonly<Setup>, a: LiveAction, arcade: boolean): { setup: Setup; changed: number } {
+/**
+ * s after one press of a: index is the setup index a acts on, moved whether
+ * it changed (false at a range limit, or for TC/ABS in Arcade).
+ */
+export function liveStep(s: Readonly<Setup>, a: LiveAction, arcade: boolean): { setup: Setup; index: number; moved: boolean } {
   const [i, d] = STEP[a];
   const out = s.slice() as Setup;
-  if (arcade && (i === TC || i === ABS)) return { setup: out, changed: -1 };
+  if (arcade && (i === TC || i === ABS)) return { setup: out, index: i, moved: false };
   out[i] += d;
   const setup = clampSetup(out);
-  return { setup, changed: setup[i] !== s[i] ? i : -1 };
+  return { setup, index: i, moved: setup[i] !== s[i] };
 }

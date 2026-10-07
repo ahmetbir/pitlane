@@ -28,7 +28,7 @@ import { initialFlow, step, type FlowEvent } from "./flow.ts";
 import { garagePanel } from "./garage.ts";
 import { GridScreen } from "./grid.ts";
 import type { Entry } from "./home.ts";
-import { Hud } from "./hud.ts";
+import { Hud, type LivePress } from "./hud.ts";
 import { loadSettings, loadSetup, loadToken, saveSettings, saveSetup, storeToken } from "./prefs.ts";
 import { resultsView } from "./results.ts";
 import { focusFirst, Toast } from "./widgets.ts";
@@ -241,13 +241,12 @@ export function play(o: PlayOpts): void {
       if (controls.take("help") && (flow.view === "grid" || flow.view === "race")) toggleCard();
       view.lookBack(back);
       const arcade = handling === "arcade";
-      let changed = -1; // the setup index a live control just moved
+      let pressed: LivePress | null = null; // the last live control pressed this frame
       for (const a of LIVE_ACTIONS) {
         if (!controls.take(a) || flow.view !== "race") continue; // presses off the race go nowhere
         const r = liveStep(setup, a, arcade);
-        if (r.changed < 0) continue;
-        setup = saveSetup(r.setup);
-        changed = r.changed;
+        if (r.moved) setup = saveSetup(r.setup);
+        pressed = { index: r.index, moved: r.moved };
       }
       session.frame(dt);
       const st = session.ownCar();
@@ -257,7 +256,7 @@ export function play(o: PlayOpts): void {
       if (flow.view !== "race") return;
       if (st) audio.frame(dt, st, throttle, others);
       if (st) hud.gauges(speed(st), st.gear, st.rpm, st.launch && Math.abs(st.vx) < STOPPED_VX);
-      hud.setLive(setup, arcade, changed);
+      hud.setLive(setup, arcade, pressed);
       hud.drawMap(st ? [...others, { id: car, x: st.x, z: st.z }] : others, car);
     },
     text: () => {

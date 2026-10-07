@@ -55,7 +55,7 @@
 @media (max-width: 700px) {
   .hud .big { font-size: 1.3rem; }
   .hud-tl { top: 10px; left: 10px; gap: 12px; padding: 8px 10px; }
-  .hud-tr { top: auto; bottom: 118px; right: 10px; min-width: 0; width: min(190px, calc(100% - 20px)); padding: 8px 10px; }
+  .hud-tr { top: auto; bottom: 146px; /* above .hud-bc at its full height: dash, rpm, live readout, badge row */ right: 10px; min-width: 0; width: min(190px, calc(100% - 20px)); padding: 8px 10px; }
   .hud .times .cell:first-child .v { font-size: 1.1rem; }
   .hud-bl { left: 10px; bottom: 10px; }
   .minimap { width: 100px; height: 100px; }
@@ -76,8 +76,8 @@
 .hud-tools { display: flex; gap: 6px; align-items: center; }
 .hud-tool { opacity: 0.8; text-shadow: none; }
 .hud-tool:hover { opacity: 1; }
-.hud .dash-tags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
-.hud .dash-tags:not(:has(:not([hidden]))) { display: none; }
+/* The badge row's height is always reserved, so a launch hold or a penalty never grows the panel. */
+.hud .dash-tags { display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 4px; min-height: 18px; }
 .hud .launch-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 99px; text-shadow: none; }
 .hud .launch-badge { color: #111; background: var(--yellow); }
 .hud .pen-badge { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 99px; text-shadow: none; color: #fff; background: #e23b30; }
@@ -91,9 +91,10 @@
 @media (max-width: 700px) { .hud .launch-hint { font-size: 0.8rem; } .hud-tools .hud-tool:last-child { display: none; } }
 
 /* v1.2: the live setup readout (brake bias, TC, ABS, diff); the value just changed lights up */
-.hud .live { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 0; margin-top: 7px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; white-space: nowrap; color: #cfe9ff; }
+.hud .live { display: flex; flex-wrap: nowrap; justify-content: center; align-items: center; margin-top: 7px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; white-space: nowrap; color: #cfe9ff; }
 .hud .live-v { padding: 1px 5px; border-radius: 6px; transition: background-color 0.3s, color 0.3s; }
 .hud .live-sep { font-style: normal; margin: 0 2px; color: rgba(255, 255, 255, 0.45); }
 .hud .live-v.off { color: #ffb3ab; }
 .hud .live-v.hot { color: #111; background: var(--yellow); text-shadow: none; transition: none; }
+.hud .live-v.edge { color: rgba(255, 255, 255, 0.55); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); background: rgba(255, 255, 255, 0.08); transition: none; } /* pressed at a limit / locked */
 @media (max-width: 700px) { .hud .live { margin-top: 4px; font-size: 0.64rem; letter-spacing: 0; } .hud .live-v { padding: 1px 3px; } .hud .live-sep { margin: 0; } }

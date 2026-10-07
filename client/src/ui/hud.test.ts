@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLang } from "../i18n/index.ts";
-import { absBadge, penBadge, gapText, gearLabel, lapOf, launchReady, liveParts, rpmFill, tcBadge } from "./hud.ts";
+import { penBadge, gapText, gearLabel, lapOf, launchReady, liveParts, rpmFill } from "./hud.ts";
 import { launchRPM } from "../car/car.ts";
 import { fastest, resultCells } from "./results.ts";
 
@@ -43,26 +43,30 @@ test("results: DNF marking, fastest lap", () => {
   assert.equal(resultCells(row).penalty, "+5 sn");
 });
 
-test("gear R in reverse, the launch bar at the launch rpm, the TC badge", () => {
+test("gear R in reverse, the launch bar at the launch rpm", () => {
   assert.equal(gearLabel(0), "R");
   assert.equal(gearLabel(3), "3");
   assert.equal(launchReady(launchRPM), true);
   assert.equal(launchReady(8000), false);
-  setLang("en", null);
-  assert.equal(tcBadge(2), "TC 2");
-  assert.equal(tcBadge(0), "TC OFF");
-  setLang("tr", null);
-  assert.equal(tcBadge(0), "TC KAPALI");
+});
+
+test("the live readout stays short in both languages (one line at phone width)", () => {
+  for (const l of ["en", "tr"] as const) {
+    setLang(l, null);
+    for (const arcade of [false, true]) {
+      const n = liveParts([6, 6, 70, 3, 10, 5, 3, 3], arcade).join("").length;
+      assert.ok(n <= 24, `${l} ${arcade}: ${n} chars`);
+    }
+  }
 });
 
 test("the live readout: BB 58.0 · TC 1 · ABS 1 · DIFF 5; Arcade TC/ABS A; off levels", () => {
   setLang("en", null);
   assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 1, 1], false), ["BB 58.0", "TC 1", "ABS 1", "DIFF 5"]);
-  assert.deepEqual(liveParts([6, 6, 63, 3, 9, 5, 0, 0], false), ["BB 63.0", "TC OFF", "ABS OFF", "DIFF 9"]);
+  assert.deepEqual(liveParts([6, 6, 63, 3, 9, 5, 0, 0], false), ["BB 63.0", "TC 0", "ABS 0", "DIFF 9"]);
   assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 0, 2], true), ["BB 58.0", "TC A", "ABS A", "DIFF 5"]);
-  assert.equal(absBadge(3), "ABS 3");
   setLang("tr", null);
-  assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 2, 0], false), ["FD 58,0", "TC 2", "ABS KAPALI", "DİF 5"]);
+  assert.deepEqual(liveParts([6, 6, 58, 3, 5, 5, 2, 0], false), ["FD 58,0", "TC 2", "ABS 0", "DİF 5"]);
 });
 
 test("the penalty badge: +5 s / +5 sn, empty without a penalty", () => {

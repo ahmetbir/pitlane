@@ -61,29 +61,23 @@ export function penBadge(ms: number): string {
   return ms > 0 ? t("hud.pen", { n: Math.round(ms / 1000) }) : "";
 }
 
-/** The TC badge: "TC 2", "TC OFF". */
-export function tcBadge(level: number): string {
-  return level > 0 ? `TC ${level}` : t("hud.tcOff");
-}
-
-/** The ABS badge: "ABS 2", "ABS OFF". */
-export function absBadge(level: number): string {
-  return level > 0 ? `ABS ${level}` : t("hud.absOff");
-}
-
 /**
- * The live readout in LIVE_ORDER: "BB 58.0", "TC 1", "ABS 1", "DIFF 5"; in
- * Arcade TC and ABS are the room's, shown as "TC A", "ABS A".
+ * The live readout in LIVE_ORDER: "BB 58.0", "TC 1", "ABS 1", "DIFF 5"; level
+ * 0 is off ("TC 0", drawn as off); in Arcade TC and ABS are the room's, shown
+ * as "TC A", "ABS A". Short enough for one line at phone width.
  */
 export function liveParts(s: Readonly<Setup>, arcade: boolean): string[] {
   const a = t("hud.arcadeAssist");
   return [
     `${t("hud.bb")} ${fixed(s[BrakeBias], 1)}`,
-    arcade ? `TC ${a}` : tcBadge(s[TC]),
-    arcade ? `ABS ${a}` : absBadge(s[ABS]),
+    `TC ${arcade ? a : s[TC]}`,
+    `ABS ${arcade ? a : s[ABS]}`,
     `${t("hud.diff")} ${s[Diff]}`,
   ];
 }
+
+/** A live control press: the setup index it acts on, and whether the value moved (not at a limit or locked). */
+export type LivePress = { index: number; moved: boolean };
 
 /** Rpm as the bar's fill 0..1. */
 export function rpmFill(rpm: number): number {
@@ -175,9 +169,11 @@ export class Hud {
 
   /**
    * The live setup the car drives with (every frame; the DOM is touched only
-   * on change); changed: the setup index a press just moved, lit for HOT_MS.
+   * on change); press: a live control pressed this frame. Its value lights up
+   * for HOT_MS: bright when it moved, muted when it could not (a range limit,
+   * or TC/ABS in Arcade).
    */
-  setLive(s: Readonly<Setup>, arcade: boolean, changed = -1): void {
+  setLive(s: Readonly<Setup>, arcade: boolean, press: LivePress | null = null): void {
     const parts = liveParts(s, arcade);
     const key = parts.join("|");
     if (key !== this.liveShown) {
@@ -185,17 +181,19 @@ export class Hud {
       parts.forEach((p, i) => text(this.live[i], p));
       this.live[1].classList.toggle("off", !arcade && s[TC] === 0);
       this.live[2].classList.toggle("off", !arcade && s[ABS] === 0);
-      const titles = [t("garage.bb"), arcade ? t("hud.arcadeAssistTitle") : t("garage.tc"), arcade ? t("hud.arcadeAssistTitle") : t("garage.abs"), t("garage.diff")];
+      const level = (v: number) => (arcade ? t("hud.arcadeAssistTitle") : v === 0 ? t("garage.tcOff") : String(v));
+      const titles = [t("garage.bb"), `${t("garage.tc")}: ${level(s[TC])}`, `${t("garage.abs")}: ${level(s[ABS])}`, t("garage.diff")];
       this.live.forEach((el, i) => el.setAttribute("title", titles[i]));
     }
-    const slot = LIVE_ORDER.indexOf(changed);
+    if (!press) return;
+    const slot = LIVE_ORDER.indexOf(press.index);
     if (slot < 0) return;
-    if (this.hot >= 0) this.live[this.hot].classList.remove("hot");
+    if (this.hot >= 0) this.live[this.hot].classList.remove("hot", "edge");
     this.hot = slot;
-    this.live[slot].classList.add("hot");
+    this.live[slot].classList.add(press.moved ? "hot" : "edge");
     if (this.hotTimer !== null) clearTimeout(this.hotTimer);
     this.hotTimer = setTimeout(() => {
-      this.live[slot].classList.remove("hot");
+      this.live[slot].classList.remove("hot", "edge");
       this.hot = -1;
       this.hotTimer = null;
     }, HOT_MS);
