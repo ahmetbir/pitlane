@@ -54,7 +54,14 @@ type carCase struct {
 	Init     car.State   `json:"init"`
 	Inputs   [][4]int8   `json:"inputs"` // wire units: th/100, br/100, st/127, rv 0|1, one per tick
 	Env      []envSeg    `json:"env"`
-	States   []car.State `json:"states"` // after ticks 30, 60, …
+	States   []car.State `json:"states"`         // after ticks 30, 60, …
+	Live     []liveSeg   `json:"live,omitempty"` // live setup changes: Params rebuilt from Setup.WithLive(lv) from tick t on
+}
+
+// liveSeg is a live setup change (the controls on the wheel) taking effect on tick T.
+type liveSeg struct {
+	T  int    `json:"t"`
+	Lv [4]int `json:"lv"` // car.Live order: bb, diff, tc, abs
 }
 
 type carFile struct {
@@ -89,26 +96,31 @@ type script struct {
 	abs  int
 	vx   float64 // initial forward speed
 	segs []seg
+	live []liveSeg
 }
 
-// scripts are the TC, reverse and launch cases (40..48), each 600 ticks.
+// scripts are the TC, reverse, launch and live setup cases (40..49), each 600 ticks.
 func scripts() []script {
 	flick := []seg{{90, 100, 0, 127, 0}, {60, 100, 0, 0, 0}, {90, 100, 0, -127, 0}, {360, 100, 0, 0, 0}}
 	return []script{
-		{car.Sim, 1, 1, 30, flick}, // 40..42: Sim TC 1..3, full throttle through a flick
-		{car.Sim, 2, 2, 30, flick},
-		{car.Sim, 3, 3, 30, flick},
-		{car.Arcade, 0, 0, 30, flick}, // 43: Arcade acts as TC 3 whatever the setting
+		{car.Sim, 1, 1, 30, flick, nil}, // 40..42: Sim TC 1..3, full throttle through a flick
+		{car.Sim, 2, 2, 30, flick, nil},
+		{car.Sim, 3, 3, 30, flick, nil},
+		{car.Arcade, 0, 0, 30, flick, nil}, // 43: Arcade acts as TC 3 whatever the setting
 		// 44: Sim reverse from rest, steering while backing up, then forward again.
-		{car.Sim, 2, 0, 0, []seg{{120, 100, 0, 0, 1}, {120, 100, 0, 127, 1}, {60, 0, 0, 0, 0}, {180, 100, 0, 0, 0}, {120, 0, 100, 0, 0}}},
+		{car.Sim, 2, 0, 0, []seg{{120, 100, 0, 0, 1}, {120, 100, 0, 127, 1}, {60, 0, 0, 0, 0}, {180, 100, 0, 0, 0}, {120, 0, 100, 0, 0}}, nil},
 		// 45: Arcade reverse selected while rolling forward (brakes), then backs up and stops.
-		{car.Arcade, 2, 2, 15, []seg{{200, 100, 0, 0, 1}, {100, 100, 0, -90, 1}, {120, 0, 100, 0, 0}, {180, 60, 0, 0, 0}}},
+		{car.Arcade, 2, 2, 15, []seg{{200, 100, 0, 0, 1}, {100, 100, 0, -90, 1}, {120, 0, 100, 0, 0}, {180, 60, 0, 0, 0}}, nil},
 		// 46: Sim TC 2 launch: hold, release, steer, brake.
-		{car.Sim, 2, 3, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}},
+		{car.Sim, 2, 3, 0, []seg{{120, 100, 100, 0, 0}, {240, 100, 0, 0, 0}, {120, 100, 0, 50, 0}, {120, 0, 100, 0, 0}}, nil},
 		// 47: Arcade launch on part throttle, then brake and throttle at speed down to a new hold.
-		{car.Arcade, 2, 1, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}},
+		{car.Arcade, 2, 1, 0, []seg{{150, 50, 60, 0, 0}, {200, 100, 0, 0, 0}, {250, 100, 100, 0, 0}}, nil},
 		// 48: Sim reverse with the brake held at rest (held still), released (backs up), braked while backing up, held again.
-		{car.Sim, 1, 0, 0, []seg{{120, 100, 100, 0, 1}, {150, 100, 0, 0, 1}, {120, 100, 100, 0, 1}, {210, 0, 0, 0, 0}}},
+		{car.Sim, 1, 0, 0, []seg{{120, 100, 100, 0, 1}, {150, 100, 0, 0, 1}, {120, 100, 100, 0, 1}, {210, 0, 0, 0, 0}}, nil},
+		// 49: Sim with the live setup (bb, diff, tc, abs) changed mid-run: TC on during a flick,
+		// brake bias and ABS changed while braking in a corner, diff while on power.
+		{car.Sim, 0, 0, 30, []seg{{90, 100, 0, 127, 0}, {60, 100, 0, 0, 0}, {90, 100, 0, -127, 0}, {60, 0, 100, 60, 0}, {60, 0, 100, 0, 0}, {120, 100, 0, 90, 0}, {120, 0, 100, -60, 0}},
+			[]liveSeg{{60, [4]int{58, 5, 3, 0}}, {150, [4]int{64, 9, 1, 0}}, {300, [4]int{66, 9, 1, 3}}, {330, [4]int{52, 2, 0, 1}}, {420, [4]int{58, 7, 2, 2}}, {480, [4]int{70, 1, 0, 0}}}},
 	}
 }
 
@@ -119,7 +131,7 @@ func scriptedCase(i int, sc script) carCase {
 	p := car.NewParams(sc.h, s, car.Damage{})
 	a := 0.3 * float64(i-carCases)
 	st := car.State{X: float64(10 * i), Z: -20, H: a, HX: math.Cos(a), HZ: math.Sin(a), VX: sc.vx, RPM: 4000, Gear: 1}
-	c := carCase{Handling: sc.h.String(), Setup: s, Params: p, Init: st, Env: []envSeg{{Mu: 1}}}
+	c := carCase{Handling: sc.h.String(), Setup: s, Params: p, Init: st, Env: []envSeg{{Mu: 1}}, Live: sc.live}
 	for _, g := range sc.segs {
 		for k := 0; k < g.n; k++ {
 			c.Inputs = append(c.Inputs, [4]int8{g.th, g.br, g.st, g.rv})
@@ -184,10 +196,14 @@ func makeCarCase(r *rng, i int) carCase {
 
 // play steps st through c's inputs and environment, sampling every sampleEach ticks.
 func (c *carCase) play(st car.State, p car.Params) {
-	e := 0
+	h, _ := car.ParseHandling(c.Handling)
+	e, l := 0, 0
 	for t := 0; t < carTicks; t++ {
 		for e+1 < len(c.Env) && c.Env[e+1].T <= t {
 			e++
+		}
+		for ; l < len(c.Live) && c.Live[l].T <= t; l++ {
+			p = car.NewParams(h, c.Setup.WithLive(c.Live[l].Lv), c.Dmg)
 		}
 		w := c.Inputs[t]
 		in := protocol.Input{Th: w[0], Br: w[1], St: w[2], Rv: w[3] == 1}

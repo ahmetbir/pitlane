@@ -21,6 +21,8 @@ interface GoParams {
 interface CarCase {
   handling: string; setup: Setup; dmg: GoDamage; params: GoParams; init: GoState;
   inputs: [number, number, number, number][]; env: { t: number; mu: number; drag: number }[]; states: GoState[];
+  /** Live setup changes: from tick t on, Params are newParams(handling, withLive(setup, lv), dmg). */
+  live?: { t: number; lv: number[] }[];
 }
 interface CarFile { dt: number; ticks: number; sampleEach: number; cases: CarCase[] }
 
@@ -54,7 +56,7 @@ test("DT matches Go", () => {
 });
 
 test("newParams matches Go bit for bit", () => {
-  assert.equal(file.cases.length, 49); // 40 random, then the TC, reverse and launch scripts
+  assert.equal(file.cases.length, 50); // 40 random, then the TC, reverse, launch and live setup scripts
   file.cases.forEach((c, i) => {
     const [h, ok] = parseHandling(c.handling);
     assert.ok(ok);
@@ -62,25 +64,43 @@ test("newParams matches Go bit for bit", () => {
   });
 });
 
+/** Replays case c (with its live setup changes unless noLive); calls at(st, tick) after every sampled tick. */
+function replay(c: CarCase, at: (st: State, t: number, k: number) => void, noLive = false): void {
+  const [h] = parseHandling(c.handling);
+  let p = newParams(h, c.setup, damage(c.dmg));
+  const live = noLive ? [] : (c.live ?? []);
+  const st = state(c.init);
+  let e = 0, l = 0, k = 0;
+  for (let t = 0; t < file.ticks; t++) {
+    while (e + 1 < c.env.length && c.env[e + 1].t <= t) e++;
+    for (; l < live.length && live[l].t <= t; l++) p = newParams(h, withLive(c.setup, live[l].lv), damage(c.dmg));
+    const [th, br, sr, rv] = c.inputs[t];
+    // protocol.Input.Car(): wire integers to floats.
+    step(st, p, { throttle: th / 100, brake: br / 100, steer: sr / 127, reverse: rv === 1 }, { mu: c.env[e].mu, drag: c.env[e].drag });
+    if ((t + 1) % file.sampleEach === 0) at(st, t + 1, k++);
+  }
+}
+
 test("step replays Go's car vectors bit for bit", () => {
   file.cases.forEach((c, i) => {
-    const [h] = parseHandling(c.handling);
-    const p = newParams(h, c.setup, damage(c.dmg));
-    const st = state(c.init);
     assert.equal(c.inputs.length, file.ticks);
-    let e = 0, k = 0;
-    for (let t = 0; t < file.ticks; t++) {
-      while (e + 1 < c.env.length && c.env[e + 1].t <= t) e++;
-      const [th, br, sr, rv] = c.inputs[t];
-      // protocol.Input.Car(): wire integers to floats.
-      step(st, p, { throttle: th / 100, brake: br / 100, steer: sr / 127, reverse: rv === 1 }, { mu: c.env[e].mu, drag: c.env[e].drag });
-      if ((t + 1) % file.sampleEach === 0) {
-        exact(st, state(c.states[k]), `case ${i} tick ${t + 1}`);
-        k++;
-      }
-    }
-    assert.equal(k, c.states.length);
+    let n = 0;
+    replay(c, (st, t, k) => {
+      exact(st, state(c.states[k]), `case ${i} tick ${t}`);
+      n++;
+    });
+    assert.equal(n, c.states.length);
   });
+});
+
+test("case 49 changes the live setup mid-run, and the changes matter", () => {
+  const c = file.cases[49];
+  assert.deepEqual(c.live?.map((x) => x.t), [60, 150, 300, 330, 420, 480]);
+  let differ = 0;
+  replay(c, (st, _t, k) => {
+    if (!Object.is(st.vx, c.states[k].VX)) differ++;
+  }, true);
+  assert.ok(differ > 10, `without the live changes only ${differ} samples differ`);
 });
 
 test("setup clamps and wing loss", () => {
@@ -104,7 +124,7 @@ test("non-finite input is ignored", () => {
 
 test("the scripted vectors cover TC levels, reverse and launch", () => {
   const sc = file.cases.slice(40);
-  assert.deepEqual(sc.map((c) => [c.handling, c.setup[6]]), [["sim", 1], ["sim", 2], ["sim", 3], ["arcade", 0], ["sim", 2], ["arcade", 2], ["sim", 2], ["arcade", 2], ["sim", 1]]);
+  assert.deepEqual(sc.map((c) => [c.handling, c.setup[6]]), [["sim", 1], ["sim", 2], ["sim", 3], ["arcade", 0], ["sim", 2], ["arcade", 2], ["sim", 2], ["arcade", 2], ["sim", 1], ["sim", 0]]);
   assert.ok(sc[4].states.some((s) => s.Gear === 0 && s.VX < -7.5), "case 44 backs up at about 8 m/s");
   assert.ok(sc[5].inputs.some((w) => w[3] === 1) && sc[5].states.some((s) => s.Gear === 0), "case 45 reverses");
   for (const c of [sc[6], sc[7]]) assert.ok(c.states.some((s) => s.Launch && s.VX === 0 && s.RPM > 4000), "launch hold");
