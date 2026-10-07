@@ -4,11 +4,13 @@
 //
 // The V10 is voiced from its firing order: a four-stroke V10 fires five times
 // per crank turn, so its note is rpm/12 Hz (333 Hz at idle, 1125 Hz at the
-// limiter: the scream). Two banks of a harmonic-rich wave a few cents apart
-// beat against each other; the bank order (half the firing note) and the crank
-// order (a fifth) give it body. The mix is driven into a soft clipper harder
-// with the throttle (rasp on power, cleaner on the overrun), lifted around
-// 2.4 kHz and low-passed, the low-pass opening with throttle and revs.
+// limiter). Two banks of a bright harmonic wave a few cents apart beat against
+// each other. Low in the revs the bank order (half the firing note) and the
+// crank order (a fifth) give a heavy body, and slow noise on the banks' level
+// makes the firing lumpy; both fade out as the revs climb. High in the revs a
+// resonance riding at 2.5× the firing note lifts up to 12 dB: the scream. The
+// mix is driven into a soft clipper (harder with throttle and revs: rasp on
+// power, cleaner on the overrun) and low-passed, opening with throttle and revs.
 import { AudioShell, type Voices } from "roomkit/audio/shell";
 
 export const IDLE_RPM = 4000;
@@ -22,6 +24,7 @@ export const OTHERS = 2;
 export const OTHER_RANGE_M = 120;
 
 const SMOOTH_S = 0.04;
+const LUMP_DEPTH = 3; // × lowWeight: 30 Hz low-passed white noise is about ±0.1
 const thumpCooldownS = 0.12;
 const wallDropMS = 5; // a one-frame speed loss above this is a wall hit
 
@@ -36,17 +39,31 @@ export function rpmToHz(rpm: number): number {
 
 /** Low-pass cutoff in Hz: opens with throttle, and with rpm. */
 export function cutoffHz(throttle: number, rpm: number): number {
-  return 1500 + clamp01(throttle) * 6500 + revs(rpm) * 3000;
+  return 1800 + clamp01(throttle) * 6000 + revs(rpm) * 6000;
 }
 
-/** Drive into the soft clipper: harder on power (rasp), clean on the overrun. */
-export function driveOf(throttle: number): number {
-  return 0.8 + clamp01(throttle) * 2.4;
+/** Drive into the soft clipper: harder on power and high in the revs (rasp), clean on the overrun. */
+export function driveOf(throttle: number, rpm = IDLE_RPM): number {
+  return 0.9 + clamp01(throttle) * 2.6 + revs(rpm) * 0.8;
 }
 
-/** Engine loudness: a floor at idle and on the overrun, up to full throttle. */
-export function engineGain(throttle: number): number {
-  return 0.045 + clamp01(throttle) * 0.1;
+/** Engine loudness: a floor at idle and on the overrun, up with throttle and a little with revs. */
+export function engineGain(throttle: number, rpm = IDLE_RPM): number {
+  return 0.035 + clamp01(throttle) * 0.075 + revs(rpm) * 0.02;
+}
+
+/** Weight of the low orders (bank, crank) and of the lumpy firing: full at idle, gone at the limiter. */
+export function lowWeight(rpm: number): number {
+  const k = 1 - revs(rpm);
+  return k * k;
+}
+
+/** The scream resonance: 2.5× the firing note (600 … 4500 Hz) and its lift in dB (2 → 12 with revs). */
+export function screamHz(rpm: number): number {
+  return Math.min(4500, Math.max(600, 2.5 * rpmToHz(rpm)));
+}
+export function screamDb(rpm: number): number {
+  return 2 + 10 * revs(rpm);
 }
 
 export function slipOf(vx: number, vy: number): number {
@@ -72,9 +89,9 @@ export function otherHz(speedMS: number): number {
  * The V10 wave's harmonic amplitudes (index 1…N): a slow roll-off with the odd
  * harmonics lifted, which reads as rasp rather than buzz.
  */
-export function v10Harmonics(n = 24): Float32Array {
+export function v10Harmonics(n = 32): Float32Array {
   const a = new Float32Array(n + 1);
-  for (let k = 1; k <= n; k++) a[k] = (k % 2 === 1 ? 1.3 : 1) / k ** 0.75;
+  for (let k = 1; k <= n; k++) a[k] = (k % 2 === 1 ? 1.3 : 1) / k ** 0.55;
   return a;
 }
 
@@ -111,6 +128,10 @@ export class CarAudio implements Voices {
   private banks: [OscillatorNode, OscillatorNode] | null = null;
   private bank: OscillatorNode | null = null; // bank order: half the firing note
   private crank: OscillatorNode | null = null; // crank order: a fifth of it
+  private bankGain: GainNode | null = null;
+  private crankGain: GainNode | null = null;
+  private lump: GainNode | null = null; // depth of the slow noise on the banks' level
+  private scream: BiquadFilterNode | null = null;
   private drive: GainNode | null = null;
   private lp: BiquadFilterNode | null = null;
   private engine: GainNode | null = null;
@@ -124,9 +145,9 @@ export class CarAudio implements Voices {
     const h = v10Harmonics();
     const wave = ctx.createPeriodicWave(new Float32Array(h.length), h);
     this.engine = gain(ctx, 0);
-    this.lp = filter(ctx, "lowpass", 1500, 0.7);
-    const scream = filter(ctx, "peaking", 2400, 1.2);
-    scream.gain.value = 5;
+    this.lp = filter(ctx, "lowpass", 1800, 0.7);
+    this.scream = filter(ctx, "peaking", screamHz(IDLE_RPM), 1.4);
+    this.scream.gain.value = screamDb(IDLE_RPM);
     const shaper = ctx.createWaveShaper();
     shaper.curve = clipCurve();
     shaper.oversample = "2x";
@@ -134,13 +155,23 @@ export class CarAudio implements Voices {
     const a = osc(ctx, "sine", HZ_MIN, -4, wave);
     const b = osc(ctx, "sine", HZ_MIN, 4, wave);
     this.banks = [a, b];
+    const banks = gain(ctx, 1); // its level wobbles by the lump
+    a.connect(gain(ctx, 0.35)).connect(banks);
+    b.connect(gain(ctx, 0.35)).connect(banks);
+    banks.connect(this.drive);
     this.bank = osc(ctx, "sawtooth", HZ_MIN / 2, 0);
     this.crank = osc(ctx, "sine", HZ_MIN / 5, 0);
-    a.connect(gain(ctx, 0.35)).connect(this.drive);
-    b.connect(gain(ctx, 0.35)).connect(this.drive);
-    this.bank.connect(gain(ctx, 0.12)).connect(this.drive);
-    this.crank.connect(gain(ctx, 0.3)).connect(this.drive);
-    this.drive.connect(shaper).connect(scream).connect(this.lp).connect(this.engine).connect(master);
+    this.bankGain = gain(ctx, 0.29);
+    this.crankGain = gain(ctx, 0.55);
+    this.bank.connect(this.bankGain).connect(this.drive);
+    this.crank.connect(this.crankGain).connect(this.drive);
+    const lumpSrc = ctx.createBufferSource();
+    lumpSrc.buffer = noise;
+    lumpSrc.loop = true;
+    this.lump = gain(ctx, LUMP_DEPTH);
+    lumpSrc.connect(filter(ctx, "lowpass", 30, 0.7)).connect(this.lump).connect(banks.gain);
+    lumpSrc.start();
+    this.drive.connect(shaper).connect(this.scream).connect(this.lp).connect(this.engine).connect(master);
 
     const src = ctx.createBufferSource();
     src.buffer = noise;
@@ -172,15 +203,23 @@ export class CarAudio implements Voices {
   /** One frame of the own car (and the others when drawn). */
   update(own: Own, throttle: number, others: readonly Other[]): void {
     const c = this.ctx;
-    if (!c || !this.on || !this.banks || !this.bank || !this.crank || !this.drive || !this.lp || !this.engine || !this.squeal || !this.band) return;
+    if (!c || !this.on || !this.banks || !this.bank || !this.crank || !this.bankGain || !this.crankGain || !this.lump || !this.scream
+      || !this.drive || !this.lp || !this.engine || !this.squeal || !this.band) return;
     const t = c.currentTime;
-    const hz = rpmToHz(own.rpm);
+    const rpm = own.rpm;
+    const hz = rpmToHz(rpm);
+    const low = lowWeight(rpm);
     for (const o of this.banks) smooth(o.frequency, hz, t);
     smooth(this.bank.frequency, hz / 2, t);
     smooth(this.crank.frequency, hz / 5, t);
-    smooth(this.drive.gain, driveOf(throttle), t);
-    smooth(this.lp.frequency, cutoffHz(throttle, own.rpm), t);
-    smooth(this.engine.gain, engineGain(throttle), t);
+    smooth(this.bankGain.gain, 0.04 + 0.25 * low, t);
+    smooth(this.crankGain.gain, 0.05 + 0.5 * low, t);
+    smooth(this.lump.gain, LUMP_DEPTH * low, t);
+    smooth(this.scream.frequency, screamHz(rpm), t);
+    smooth(this.scream.gain, screamDb(rpm), t);
+    smooth(this.drive.gain, driveOf(throttle, rpm), t);
+    smooth(this.lp.frequency, cutoffHz(throttle, rpm), t);
+    smooth(this.engine.gain, engineGain(throttle, rpm), t);
     const sq = squealGain(own.vx, own.vy, own.r);
     smooth(this.squeal.gain, sq, t);
     smooth(this.band.frequency, 1800 + 1500 * clamp01(slipOf(own.vx, own.vy)), t);

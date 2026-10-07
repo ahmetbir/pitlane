@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CarAudio, HZ_MAX, HZ_MIN, OTHERS, RaceAudio, SQUEAL_MAX, clipCurve, cutoffHz, driveOf, nearest, otherGain, otherHz, rpmToHz, squealGain, v10Harmonics, volumeGain } from "./engine.ts";
+import { CarAudio, HZ_MAX, HZ_MIN, OTHERS, RaceAudio, SQUEAL_MAX, clipCurve, cutoffHz, driveOf, engineGain, lowWeight, screamDb, screamHz, nearest, otherGain, otherHz, rpmToHz, squealGain, v10Harmonics, volumeGain } from "./engine.ts";
 
 type Call = { node: string; param: string; v: number; tc: number };
 
@@ -42,6 +42,18 @@ test("cutoff and clipper drive follow throttle", () => {
   assert.ok(cutoffHz(1, 8000) > cutoffHz(0, 8000));
   assert.ok(cutoffHz(1, 12000) > cutoffHz(1, 6000));
   assert.ok(driveOf(1) > driveOf(0) && driveOf(NaN) === driveOf(0));
+  assert.ok(driveOf(1, 13000) > driveOf(1, 6000), "more rasp high in the revs");
+});
+
+test("low orders and lumps fade with revs; the scream rises with them", () => {
+  assert.equal(lowWeight(4000), 1);
+  assert.equal(lowWeight(13500), 0);
+  assert.ok(lowWeight(7000) > lowWeight(11000));
+  assert.equal(screamDb(13500) - screamDb(4000), 10);
+  assert.ok(screamDb(12000) > screamDb(8000));
+  assert.ok(screamHz(13500) > screamHz(4000) && screamHz(13500) <= 4500 && screamHz(0) >= 600);
+  assert.ok(engineGain(1, 13000) > engineGain(1, 5000) && engineGain(1, 5000) > engineGain(0, 5000));
+  assert.equal(lowWeight(NaN), 1);
 });
 
 test("V10 wave and clip curve are finite and shaped", () => {
@@ -85,7 +97,8 @@ test("update smooths every parameter with setTargetAtTime", () => {
   assert.ok(freqs.some((c) => c.v === rpmToHz(9000)));
   assert.ok(freqs.some((c) => c.v === rpmToHz(9000) / 2), "bank order an octave down");
   assert.ok(freqs.some((c) => c.v === rpmToHz(9000) / 5), "crank order");
-  assert.ok(f.calls.some((c) => c.node === "gain" && c.v === driveOf(1)), "drive follows throttle");
+  assert.ok(f.calls.some((c) => c.node === "gain" && c.v === driveOf(1, 9000)), "drive follows throttle and revs");
+  assert.ok(f.calls.some((c) => c.node === "filter" && c.param === "frequency" && c.v === screamHz(9000)), "scream tracks the revs");
   assert.ok(f.calls.every((c) => c.tc > 0 && Number.isFinite(c.v)));
   assert.ok(f.calls.some((c) => c.node === "gain" && c.v === squealGain(30, 8, 0.5)));
   car.setOn(false);
