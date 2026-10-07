@@ -5,7 +5,7 @@ import { kiyi } from "../track/track.ts";
 import { envFor, moveCar, type Hint } from "./world.ts";
 
 const tr = kiyi();
-const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 1], { frontWing: 0, rearWing: 0, susp: 0 });
+const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 1, 1], { frontWing: 0, rearWing: 0, susp: 0 });
 
 // carAt places a car at distance s, offset lat, heading along the track rotated by turn (rad, left +).
 function carAt(s: number, lat: number, turn: number, vx: number): State {

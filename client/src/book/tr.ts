@@ -47,13 +47,13 @@ const handling = () => [
   sub("Arcade"),
   list(
     [`Lastikler ${F.arcadeGrip()} daha fazla tutar.`],
-    [`Çekiş kontrolü hep açıktır. Pay Sim'in 3. seviyesiyle aynıdır (${F.arcadeTC()}), ama virajda arta kalan tutuştan değil, arka lastiğin bütün tutuşundan ölçülür; arka kaymaya başlarsa gazı ayrıca yarıya indirir.`],
-    ["ABS: ön lastikler kayarken fren yumuşar, frenlerken de dönebilirsin."],
+    [`Çekiş kontrolü hep açıktır. Pay Sim'in 3. seviyesiyle aynıdır (${F.arcadeTC()}), virajın arka lastikte bıraktığı tutuş üzerinden ölçülür.`],
+    ["ABS hep açıktır: her aksın freni virajın ona bıraktığı tutuşun içinde kalır, frenlerken de dönebilirsin."],
     ["Denge yardımı arabanın kendi etrafında dönmesini sınırlar; direksiyon daha çabuk tepki verir ve hız arttıkça daha az kırılır."],
   ),
   sub("Sim"),
   list(
-    ["Normal tutuş; ABS ve denge yardımı yok. Sert frenlerken direksiyon çevirirsen ön lastiklerin bütün tutuşu frene gider ve araba düz gider."],
+    ["Normal tutuş; denge yardımı yok. ABS'yi garajda sen seçersin: Kapalı, 1, 2 ya da 3. Kapalıyken sert frenlerken direksiyon çevirirsen ön lastiklerin bütün tutuşu frene gider ve araba düz gider."],
     [`Çekiş kontrolünü garajda sen seçersin: Kapalı, 1, 2 ya da 3. Varsayılan ${F.simDefaultTC()}.`],
   ),
   sub("Çekiş kontrolü seviyeleri"),
@@ -70,7 +70,7 @@ const handling = () => [
 ];
 
 const garage = () => [
-  p("Garajda yedi ayar var. Her değişiklik bu tarayıcıda saklanır; gridde Hazırım'a bastığında sunucuya gider ve yarış boyunca o ayarla sürersin."),
+  p("Garajda sekiz ayar var. Her değişiklik bu tarayıcıda saklanır; gridde Hazırım'a bastığında sunucuya gider ve yarış boyunca o ayarla sürersin."),
   setupTable(),
   sub(settingName(0)),
   p("Ön kanat ön lastiklere bastırma kuvveti verir; her kademe biraz da hava direnci ekler."),

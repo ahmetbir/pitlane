@@ -3,7 +3,7 @@
 // a hand-edited or stale value falls back to the default.
 import { tokenStore } from "roomkit/net/pilot";
 import { slot, type Store } from "roomkit/store";
-import { clampSetup, defaultSetup, TC, type Setup } from "../car/car.ts";
+import { ABS, clampSetup, defaultSetup, TC, type Setup } from "../car/car.ts";
 import { cleanBindings, defaultBindings, type Bindings } from "../input/bindings.ts";
 import type { CamMode } from "../render/cams.ts";
 
@@ -39,13 +39,14 @@ function parse(raw: string | null): unknown {
 
 /**
  * The stored setup clamped to the garage ranges; the default when missing or
- * malformed. A six-value setup (before traction control) gets the default TC.
+ * malformed. A six-value setup (before traction control) gets the default TC and ABS, a seven-value one (before ABS) the default ABS.
  */
 export function loadSetup(store?: Get): Setup {
   const v = parse(SETUP.get(store));
   if (!Array.isArray(v) || !v.every((x) => Number.isInteger(x))) return defaultSetup();
   if (v.length === 6) v.push(defaultSetup()[TC]);
-  if (v.length !== 7) return defaultSetup();
+  if (v.length === 7) v.push(defaultSetup()[ABS]);
+  if (v.length !== 8) return defaultSetup();
   return clampSetup(v as Setup);
 }
 

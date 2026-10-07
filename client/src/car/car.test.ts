@@ -13,7 +13,7 @@ interface GoState {
   Delta: number; RPM: number; Gear: number; AX: number; Launch: boolean; Dmg: GoDamage;
 }
 interface GoParams {
-  Mu: number; AlphaF: number; AlphaR: number; SteerRate: number; Assists: boolean; TCShare: number;
+  Mu: number; AlphaF: number; AlphaR: number; SteerRate: number; Assists: boolean; TCShare: number; ABSShare: number;
   AeroF: number; AeroR: number; DragK: number; FzF0: number; FzR0: number; Transfer: number;
   BrakeF: number; BrakeR: number; Drive: number[]; RPMPerMS: number[];
   DiffK: number; DiffX: number; LatF: number; LatK: number; GripDmg: number;
@@ -32,7 +32,7 @@ const state = (s: GoState): State => ({
   delta: s.Delta, rpm: s.RPM, gear: s.Gear, ax: s.AX, launch: s.Launch, dmg: damage(s.Dmg),
 });
 const params = (p: GoParams): Params => ({
-  mu: p.Mu, alphaF: p.AlphaF, alphaR: p.AlphaR, steerRate: p.SteerRate, assists: p.Assists, tcShare: p.TCShare,
+  mu: p.Mu, alphaF: p.AlphaF, alphaR: p.AlphaR, steerRate: p.SteerRate, assists: p.Assists, tcShare: p.TCShare, absShare: p.ABSShare,
   aeroF: p.AeroF, aeroR: p.AeroR, dragK: p.DragK, fzF0: p.FzF0, fzR0: p.FzR0, transfer: p.Transfer,
   brakeF: p.BrakeF, brakeR: p.BrakeR, drive: p.Drive, rpmPerMS: p.RPMPerMS,
   diffK: p.DiffK, diffX: p.DiffX, latF: p.LatF, latK: p.LatK, gripDmg: p.GripDmg,
@@ -84,8 +84,8 @@ test("step replays Go's car vectors bit for bit", () => {
 });
 
 test("setup clamps and wing loss", () => {
-  assert.deepEqual(clampSetup([0, 99, 10, 9, -3, 5, 7]), [1, 11, 50, 5, 1, 5, 3]);
-  assert.deepEqual(clampSetup([6, 6, 58, 3, 5, 5, -1]), [6, 6, 58, 3, 5, 5, 0]);
+  assert.deepEqual(clampSetup([0, 99, 10, 9, -3, 5, 7, 7]), [1, 11, 50, 5, 1, 5, 3, 3]);
+  assert.deepEqual(clampSetup([6, 6, 58, 3, 5, 5, -1, -1]), [6, 6, 58, 3, 5, 5, 0, 0]);
   assert.equal(frontWingLost({ frontWing: 0.6, rearWing: 0, susp: 0 }), false);
   assert.equal(frontWingLost({ frontWing: 0.61, rearWing: 0, susp: 0 }), true);
   assert.deepEqual(parseHandling("sim"), [Handling.Sim, true]);
@@ -93,7 +93,7 @@ test("setup clamps and wing loss", () => {
 });
 
 test("non-finite input is ignored", () => {
-  const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 1], { frontWing: 0, rearWing: 0, susp: 0 });
+  const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 1, 1], { frontWing: 0, rearWing: 0, susp: 0 });
   const mk = (): State => ({ x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 20, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 3, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } });
   const a = mk(), b = mk();
   step(a, p, { throttle: NaN, brake: Infinity, steer: -Infinity }, { mu: NaN, drag: 0 });

@@ -1,7 +1,7 @@
 // The manual's generated parts, shared by both languages: the numbers it
 // quotes (from the car model, the bindings, the room settings and the race
 // rules) and its tables and drawings. The prose lives in tr.ts and en.ts.
-import { defaultSetup, Handling, launchEnd, launchRPM, newParams, noDamage, revTop, setupMax, setupMin, TC, tcShares } from "../car/car.ts";
+import { ABS, defaultSetup, Handling, launchEnd, launchRPM, newParams, noDamage, revTop, setupMax, setupMin, TC, assistShares } from "../car/car.ts";
 import { launchRevS, zeroTo100 } from "../car/measure.ts";
 import { pct } from "../i18n/format.ts";
 import { t } from "../i18n/index.ts";
@@ -57,6 +57,7 @@ export function setupTable(): HTMLElement {
   const d = defaultSetup();
   const rows = SLIDERS.map((sl, i) => [t(sl.label), `${sl.value(setupMin[i])} … ${sl.value(setupMax[i])}`, sl.value(d[i])]);
   rows.push([t("garage.tc"), `${tcName(setupMin[TC])} … ${tcName(setupMax[TC])}`, tcName(d[TC])]);
+  rows.push([t("garage.abs"), `${tcName(setupMin[ABS])} … ${tcName(setupMax[ABS])}`, tcName(d[ABS])]);
   return table([t("bt.setting"), t("bt.range"), t("bt.default")], rows);
 }
 
@@ -66,7 +67,7 @@ export const settingName = (i: number): string => (i === TC ? t("garage.tc") : t
 /** TC levels: the share of the rear grip the throttle may use and the Sim 0–100 km/h. */
 export function tcTable(): HTMLElement {
   return table([t("bt.level"), t("bt.share"), t("bt.z100")], TC_LEVELS.map((l) => [
-    tcName(l), l === 0 ? t("bt.noLimit") : pct(tcShares[l]), `${sec(zeroTo100(Handling.Sim, l), 2)} ${t("bt.s")}`,
+    tcName(l), l === 0 ? t("bt.noLimit") : pct(assistShares[l]), `${sec(zeroTo100(Handling.Sim, l), 2)} ${t("bt.s")}`,
   ]));
 }
 

@@ -25,8 +25,8 @@ export function handlingString(h: Handling): string {
   return h === Handling.Sim ? "sim" : "arcade";
 }
 
-/** Garage setup, indexed by FrontWing … TC. */
-export type Setup = [number, number, number, number, number, number, number];
+/** Garage setup, indexed by FrontWing … ABS. */
+export type Setup = [number, number, number, number, number, number, number, number];
 
 export const FrontWing = 0;
 export const RearWing = 1;
@@ -36,13 +36,15 @@ export const Diff = 4;
 export const SuspBalance = 5;
 /** Traction control level: 0 off, 1..3 (Arcade always acts as 3). */
 export const TC = 6;
+/** Anti-lock brakes level: 0 off, 1..3 (Arcade always acts as 1). */
+export const ABS = 7;
 
 /** Garage ranges per setup index (inclusive); read-only. */
-export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1, 0];
-export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9, 3];
+export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1, 0, 0];
+export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9, 3, 3];
 
 export function defaultSetup(): Setup {
-  return [6, 6, 58, 3, 5, 5, 1];
+  return [6, 6, 58, 3, 5, 5, 1, 1];
 }
 
 export function clampSetup(s: Setup): Setup {
@@ -168,12 +170,11 @@ const launchUp = 133.33333333333334; // rpm per step at full throttle on the hol
 const slipDrop = 100.0; // rpm per step while the clutch slips (6000 rpm/s)
 /** The clutch slip after a launch ends at this speed (m/s) at the latest. */
 export const launchEnd = 5.0;
-const tcCut = 0.5;
 const tcShare = 0.8;
-/** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */
-export const tcShares: readonly number[] = [0, 1.0, 0.9, tcShare];
-const absCut = 0.6;
-const tcSlip = 0.9;
+/** Share of an axle's grip left after cornering that TC (drive) or ABS (brakes) allows per level; 0 = no limit. */
+export const assistShares: readonly number[] = [0, 1.0, 0.9, tcShare];
+/** The setup a driver may change while racing; the rest is hardware. */
+export const Live: readonly number[] = [BrakeBias, Diff, TC, ABS];
 const diffOn = 0.3;
 const diffStep = 0.015;
 const diffGrip = 0.03;
@@ -209,6 +210,7 @@ export interface Params {
   steerRate: number;
   assists: boolean;
   tcShare: number;
+  absShare: number;
   aeroF: number;
   aeroR: number;
   dragK: number;
@@ -229,9 +231,9 @@ export interface Params {
 export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
   const s = clampSetup(setup);
   const d: Damage = { frontWing: clean(dmg.frontWing, 0, 1), rearWing: clean(dmg.rearWing, 0, 1), susp: clean(dmg.susp, 0, 1) };
-  let mu = 1.0, alphaF = 0.1, alphaR = simAlphaR, steerRate = 2.5, assists = false, tc = tcShares[s[TC]];
+  let mu = 1.0, alphaF = 0.1, alphaR = simAlphaR, steerRate = 2.5, assists = false, tc = assistShares[s[TC]], absS = assistShares[s[ABS]];
   if (h === Handling.Arcade) {
-    mu = 1.25; alphaF = 0.14; alphaR = arcAlphaR; steerRate = 4.0; assists = true; tc = tcShare;
+    mu = 1.25; alphaF = 0.14; alphaR = arcAlphaR; steerRate = 4.0; assists = true; tc = tcShare; absS = 1;
   }
   const fw = s[FrontWing] - 1, rw = s[RearWing] - 1;
   let clF = 0.9 + 0.22 * fw * (1 - 0.7 * d.frontWing);
@@ -245,7 +247,7 @@ export function newParams(h: Handling, setup: Setup, dmg: Damage): Params {
     rpmPerMS[g] = drive[g] * rpmPerRad;
   }
   return {
-    mu, alphaF, alphaR, steerRate, assists, tcShare: tc,
+    mu, alphaF, alphaR, steerRate, assists, tcShare: tc, absShare: absS,
     aeroF: aeroQ * clF,
     aeroR: aeroQ * clR,
     dragK: aeroQ * (cdBase + cdPerStep * (fw + rw)),
@@ -277,7 +279,15 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
 
   // Steering: rate-limited toward the (Arcade: speed-scaled) target.
   let target = inp.steer * steerLock;
-  if (p.assists) target = target / (1 + Math.max(st.vx, 0) / arcadeVX);
+  if (p.assists) {
+    target = target / (1 + Math.max(st.vx, 0) / arcadeVX);
+    if (st.vx > slipVX) {
+      // Arcade steering assist: no further than the front tyres' peak slip past the angle the car's motion already asks.
+      const c = (st.vy + cgFront * st.r) / st.vx;
+      if (target > 0) target = Math.min(target, Math.max(c + p.alphaF, 0));
+      else target = Math.max(target, Math.min(c - p.alphaF, 0));
+    }
+  }
   const stp = p.steerRate * DT;
   st.delta += Math.min(Math.max(target - st.delta, -stp), stp);
 
@@ -294,12 +304,6 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   if (inp.reverse === true && !rev) {
     brk = Math.max(brk, thr);
     thr = 0;
-  }
-
-  // Assists.
-  if (p.assists) {
-    if (abs(ar) > tcSlip * p.alphaR) thr = thr * tcCut;
-    if (abs(af) > p.alphaF) brk = brk * absCut;
   }
 
   // Normal loads: static + downforce ∓ longitudinal transfer.
@@ -359,12 +363,11 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   capR = capR * kR;
   fyF = fyF * kF;
   fyR = fyR * kR;
-  if (!p.assists && p.tcShare > 0) {
-    // Sim traction control: drive ≤ tcShare × the rear grip left after
+  if (p.tcShare > 0) {
+    // Traction control: drive ≤ tcShare × the rear grip left after
     // cornering, √(capR² − fyR²); before the diff. A launch's clutch slip allows 1.0.
     const share = slip ? 1 : p.tcShare;
-    const left = Math.sqrt(Math.max(capR * capR - fyR * fyR, 0));
-    drive = Math.min(drive, share * left);
+    drive = Math.min(drive, share * gripLeft(capR, fyR));
   }
   let capX = capR;
   const eff = Math.min(inp.throttle * inp.throttle, drive / Math.max(capR, 1));
@@ -386,10 +389,14 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     ux = st.vx / spd;
     uy = st.vy / spd;
   }
-  const bF = Math.min(brk * p.brakeF, capF);
-  const bR = Math.min(brk * p.brakeR, capR);
+  let bF = Math.min(brk * p.brakeF, capF);
+  let bR = Math.min(brk * p.brakeR, capR);
+  if (p.absShare > 0) {
+    // ABS: each axle's brake ≤ absShare × the grip cornering leaves it.
+    bF = Math.min(bF, p.absShare * gripLeft(capF, fyF));
+    bR = Math.min(bR, p.absShare * gripLeft(capR, fyR));
+  }
   const fxF = -(ux * bF);
-  if (p.assists) drive = Math.min(drive, (slip ? 1 : p.tcShare) * capR);
   if (rev) drive = -drive;
   const fxR = clamp(drive - ux * bR, capX);
   fyF = circle(fxF, fyF - uy * bF, capF);
@@ -454,6 +461,11 @@ function torque(rpm: number): number {
   let t = torqueNm[i - 1] + f * (torqueNm[i] - torqueNm[i - 1]);
   if (rpm > taperRPM) t = (t * (limitRPM - rpm)) / taperSpan;
   return t;
+}
+
+// gripLeft is what is left of an axle's capacity after a lateral force fy.
+function gripLeft(cap: number, fy: number): number {
+  return Math.sqrt(Math.max(cap * cap - fy * fy, 0));
 }
 
 // curve is the rational tyre curve 2s/(1+s²).

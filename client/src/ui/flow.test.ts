@@ -5,7 +5,7 @@ import { initialFlow, step, type Flow, type FlowEvent } from "./flow.ts";
 
 const welcome: ServerMsg = {
   t: "welcome", you: 1, code: "K3FQ", car: 4, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: true,
-  setup: [6, 6, 58, 3, 5, 5, 1], dmg: { fw: 0, rw: 0, su: 0 },
+  setup: [6, 6, 58, 3, 5, 5, 1, 1], dmg: { fw: 0, rw: 0, su: 0 },
 };
 const snap = (phase: Phase): ServerMsg => ({ t: "snap", tick: 1, ack: 0, phase, clock: 0, cars: [] });
 const grid: ServerMsg = { t: "grid", cars: [{ id: 4, name: "Ace", bot: false, ready: false }], creator: 4 };

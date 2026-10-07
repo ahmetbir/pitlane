@@ -18,11 +18,11 @@ class Mem {
 
 test("garage: a slider is rounded and clamped to its range", () => {
   const s = defaultSetup();
-  assert.deepEqual(adjust(s, 0, 99), [11, 6, 58, 3, 5, 5, 1]);
-  assert.deepEqual(adjust(s, 2, 10), [6, 6, 50, 3, 5, 5, 1]);
-  assert.deepEqual(adjust(s, 3, 4.6), [6, 6, 58, 5, 5, 5, 1]);
+  assert.deepEqual(adjust(s, 0, 99), [11, 6, 58, 3, 5, 5, 1, 1]);
+  assert.deepEqual(adjust(s, 2, 10), [6, 6, 50, 3, 5, 5, 1, 1]);
+  assert.deepEqual(adjust(s, 3, 4.6), [6, 6, 58, 5, 5, 5, 1, 1]);
   assert.deepEqual(adjust(s, 5, NaN), s);
-  assert.deepEqual(s, [6, 6, 58, 3, 5, 5, 1], "the input is not changed");
+  assert.deepEqual(s, [6, 6, 58, 3, 5, 5, 1, 1], "the input is not changed");
   assert.equal(SLIDERS.length, 6);
   assert.equal(SLIDERS[2].value(58), "58 : 42");
 });
@@ -30,22 +30,24 @@ test("garage: a slider is rounded and clamped to its range", () => {
 test("garage: the setup persists under pitlane.setup, clamped", () => {
   const st = new Mem();
   assert.deepEqual(loadSetup(st), defaultSetup(), "nothing stored: the default");
-  const saved = saveSetup([0, 12, 71, 3, 5, 5, 4] as Setup, st);
-  assert.deepEqual(saved, [1, 11, 70, 3, 5, 5, 3]);
-  assert.equal(st.getItem("pitlane.setup"), "[1,11,70,3,5,5,3]");
-  assert.deepEqual(loadSetup(st), [1, 11, 70, 3, 5, 5, 3]);
+  const saved = saveSetup([0, 12, 71, 3, 5, 5, 4, 4] as Setup, st);
+  assert.deepEqual(saved, [1, 11, 70, 3, 5, 5, 3, 3]);
+  assert.equal(st.getItem("pitlane.setup"), "[1,11,70,3,5,5,3,3]");
+  assert.deepEqual(loadSetup(st), [1, 11, 70, 3, 5, 5, 3, 3]);
   st.setItem("pitlane.setup", "[1,11,70,3,5,5]");
-  assert.deepEqual(loadSetup(st), [1, 11, 70, 3, 5, 5, 1], "a six-value setup gets the default TC");
+  assert.deepEqual(loadSetup(st), [1, 11, 70, 3, 5, 5, 1, 1], "a six-value setup gets the default TC and ABS");
+  st.setItem("pitlane.setup", "[1,11,70,3,5,5,2]");
+  assert.deepEqual(loadSetup(st), [1, 11, 70, 3, 5, 5, 2, 1], "a seven-value setup gets the default ABS");
 });
 
 test("garage: a malformed stored setup falls back to the default", () => {
   const st = new Mem();
-  for (const bad of ["{", "[1,2,3]", '["6",6,58,3,5,5]', "[6,6,58,3,5,5.5]", "[6,6,58,3,5,5,2,1]", "null"]) {
+  for (const bad of ["{", "[1,2,3]", '["6",6,58,3,5,5]', "[6,6,58,3,5,5.5]", "[6,6,58,3,5,5,2,1,1]", "null"]) {
     st.setItem("pitlane.setup", bad);
     assert.deepEqual(loadSetup(st), defaultSetup(), bad);
   }
   st.setItem("pitlane.setup", "[99,-3,58,3,5,5]");
-  assert.deepEqual(loadSetup(st), [11, 1, 58, 3, 5, 5, 1], "out of range: clamped");
+  assert.deepEqual(loadSetup(st), [11, 1, 58, 3, 5, 5, 1, 1], "out of range: clamped");
   assert.deepEqual(loadSetup(null), defaultSetup(), "storage blocked");
 });
 
@@ -73,5 +75,6 @@ test("garage: traction control Off..3 with its effect and measured 0–100", () 
   assert.match(tcEffect(1), /^1: .* Sim 0–100 km\/h ≈ 4\.4 s\.$/);
   setLang("tr", null);
   assert.match(tcEffect(3), /0–100 km\/sa ≈ 5,8 sn\.$/);
-  assert.deepEqual(adjust(defaultSetup(), 6, 0), [6, 6, 58, 3, 5, 5, 0]);
+  assert.deepEqual(adjust(defaultSetup(), 6, 0), [6, 6, 58, 3, 5, 5, 0, 1]);
+  assert.deepEqual(adjust(defaultSetup(), 7, 0), [6, 6, 58, 3, 5, 5, 1, 0]);
 });

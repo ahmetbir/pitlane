@@ -28,7 +28,7 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
     const mesh = buildCar(teamColour(i));
     stage.add(mesh.root);
     // The pole sitter is the quickest, so the field spreads out instead of driving through itself.
-    return { st, p: newParams(Handling.Arcade, [6, 6, 58, 3, 5, 5, 1], st.dmg), hint: { i: -1 }, drv: new AutoDriver(track, 18.25 - 0.25 * i), mesh, rolled: 0 };
+    return { st, p: newParams(Handling.Arcade, [6, 6, 58, 3, 5, 5, 1, 1], st.dmg), hint: { i: -1 }, drv: new AutoDriver(track, 18.25 - 0.25 * i), mesh, rolled: 0 };
   });
 
   const cams = new Cams(stage.camera);

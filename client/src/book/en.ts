@@ -47,13 +47,13 @@ const handling = () => [
   sub("Arcade"),
   list(
     [`The tyres grip ${F.arcadeGrip()} more.`],
-    [`Traction control is always on. Its share is Sim level 3's (${F.arcadeTC()}), but measured on the whole rear grip rather than on what cornering leaves; when the rear starts to slide it also halves the throttle.`],
-    ["ABS: the brakes ease off while the front tyres slide, so you can turn while braking."],
+    [`Traction control is always on. Its share is Sim level 3's (${F.arcadeTC()}), measured on the rear grip that cornering leaves.`],
+    ["ABS is always on: each axle's brake stays within the grip cornering leaves it, so you can turn while braking."],
     ["A stability aid limits the car's rotation; the steering reacts faster and turns less the faster you go."],
   ),
   sub("Sim"),
   list(
-    ["Normal grip; no ABS, no stability aid. Steer while braking hard and the front tyres spend all their grip on the brakes: the car goes straight on."],
+    ["Normal grip; no stability aid. You pick ABS in the garage: Off, 1, 2 or 3. With it off, steer while braking hard and the front tyres spend all their grip on the brakes: the car goes straight on."],
     [`You pick traction control in the garage: Off, 1, 2 or 3. The default is ${F.simDefaultTC()}.`],
   ),
   sub("Traction control levels"),
@@ -70,7 +70,7 @@ const handling = () => [
 ];
 
 const garage = () => [
-  p("The garage has seven settings. Every change is stored in this browser; pressing Ready on the grid sends it to the server and you drive the race with it."),
+  p("The garage has eight settings. Every change is stored in this browser; pressing Ready on the grid sends it to the server and you drive the race with it."),
   setupTable(),
   sub(settingName(0)),
   p("The front wing presses the front tyres down; every step also adds a little drag."),
