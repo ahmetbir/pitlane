@@ -42,7 +42,7 @@ export const setupMin: Readonly<Setup> = [1, 1, 50, 1, 1, 1, 0];
 export const setupMax: Readonly<Setup> = [11, 11, 70, 5, 10, 9, 3];
 
 export function defaultSetup(): Setup {
-  return [6, 6, 58, 3, 5, 5, 2];
+  return [6, 6, 58, 3, 5, 5, 1];
 }
 
 export function clampSetup(s: Setup): Setup {
@@ -166,6 +166,7 @@ const launchBrk = 0.5;
 export const launchRPM = 9000.0;
 const launchUp = 133.33333333333334; // rpm per step at full throttle on the hold (8000 rpm/s)
 const slipDrop = 100.0; // rpm per step while the clutch slips (6000 rpm/s)
+const launchEnd = 5.0; // the clutch slip ends at this speed (m/s) at the latest
 const tcCut = 0.5;
 const tcShare = 0.8;
 /** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */
@@ -332,12 +333,14 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     const up = launchUp * inp.throttle;
     rpm = eng + Math.min(Math.max(launchRPM - eng, -up), up);
     st.launch = true;
-  } else if (st.launch && thr > 0 && !rev && eng - slipDrop > rpm) {
+  } else if (st.launch && thr > 0 && !rev && eng - slipDrop > rpm && sv < launchEnd) {
     rpm = eng - slipDrop;
   } else {
     st.launch = false;
   }
   st.rpm = rpm;
+  const slip = st.launch && !hold; // the clutch slips after a launch hold
+
   let drive = 0.0; // magnitude; reverse flips its sign below
   if (thr > 0 && !hold && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
 
@@ -354,10 +357,11 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   fyF = fyF * kF;
   fyR = fyR * kR;
   if (!p.assists && p.tcShare > 0) {
-    // Sim traction control: drive ≤ tcShare of the rear friction circle left
-    // beside the cornering force; before the diff.
+    // Sim traction control: drive ≤ tcShare × the rear grip left after
+    // cornering, √(capR² − fyR²); before the diff. A launch's clutch slip allows 1.0.
+    const share = slip ? 1 : p.tcShare;
     const left = Math.sqrt(Math.max(capR * capR - fyR * fyR, 0));
-    drive = Math.min(drive, p.tcShare * left);
+    drive = Math.min(drive, share * left);
   }
   let capX = capR;
   const eff = Math.min(inp.throttle * inp.throttle, drive / Math.max(capR, 1));
@@ -382,7 +386,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const bF = Math.min(brk * p.brakeF, capF);
   const bR = Math.min(brk * p.brakeR, capR);
   const fxF = -(ux * bF);
-  if (p.assists) drive = Math.min(drive, tcShare * capR);
+  if (p.assists) drive = Math.min(drive, (slip ? 1 : tcShare) * capR);
   if (rev) drive = -drive;
   const fxR = clamp(drive - ux * bR, capX);
   fyF = circle(fxF, fyF - uy * bF, capF);

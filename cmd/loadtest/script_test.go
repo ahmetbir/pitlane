@@ -22,7 +22,7 @@ func TestScriptMessages(t *testing.T) {
 		wire(t, d.Create()):                    `{"t":"create","handling":"arcade","contact":"soft","laps":3}`,
 		wire(t, d.Input(0, 0)):                 `{"t":"in","th":100}`,
 		wire(t, d.Input(0, 141)):               `{"t":"in","seq":141,"th":100,"st":59}`,
-		wire(t, d.React(0, 0, "welcome", nil)): `{"t":"ready","setup":[6,6,58,3,5,5,2]}`,
+		wire(t, d.React(0, 0, "welcome", nil)): `{"t":"ready","setup":[6,6,58,3,5,5,1]}`,
 	} {
 		if got != want {
 			t.Errorf("got %s want %s", got, want)

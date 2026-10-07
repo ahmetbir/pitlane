@@ -93,12 +93,14 @@ func Step(st *State, p *Params, in Input, env Env) {
 		up := float64(launchUp * in.Throttle)
 		rpm = eng + min(max(launchRPM-eng, -up), up)
 		st.Launch = true
-	case st.Launch && thr > 0 && !rev && eng-slipDrop > rpm:
+	case st.Launch && thr > 0 && !rev && eng-slipDrop > rpm && sv < launchEnd:
 		rpm = eng - slipDrop
 	default:
 		st.Launch = false
 	}
 	st.RPM = rpm
+	slip := st.Launch && !hold // the clutch slips after a launch hold
+
 	drive := 0.0 // magnitude; reverse flips its sign below
 	if thr > 0 && !hold && !(rev && st.VX < -revTop) {
 		// Pedal map: torque × throttle², so part throttle is gentle. A forward
@@ -118,13 +120,18 @@ func Step(st *State, p *Params, in Input, env Env) {
 	capF, capR = float64(capF*kF), float64(capR*kR)
 	fyF, fyR = float64(fyF*kF), float64(fyR*kR)
 	if !p.Assists && p.TCShare > 0 {
-		// Sim traction control: the drive never asks more than TCShare of
-		// what the rear's friction circle leaves beside the cornering force
+		// Sim traction control caps the drive at TCShare × the rear grip left
+		// after cornering, √(capR² − fyR²), not of the whole rear capacity
 		// (level 1 = no excess wheelspin), so the throttle cannot take the
 		// rear's lateral grip. It acts before the diff, which then locks on
-		// the drive that is really asked.
+		// the drive that is really asked. During a launch's clutch slip it
+		// allows the tyre's limit (1.0) whatever the level.
+		share := p.TCShare
+		if slip {
+			share = 1
+		}
 		left := math.Sqrt(max(float64(capR*capR)-float64(fyR*fyR), 0))
-		drive = min(drive, float64(p.TCShare*left))
+		drive = min(drive, float64(share*left))
 	}
 	capX := capR // rear longitudinal capacity
 	if eff := min(float64(in.Throttle*in.Throttle), drive/max(capR, 1)); eff > diffOn {
@@ -157,7 +164,12 @@ func Step(st *State, p *Params, in Input, env Env) {
 		// Arcade traction control is predictive: the drive never asks more
 		// than tcShare of the rear's capacity, so a keyboard's full throttle
 		// still leaves the rear lateral grip to turn with.
-		drive = min(drive, float64(tcShare*capR))
+		// During a launch's clutch slip it allows the tyre's limit.
+		share := tcShare
+		if slip {
+			share = 1
+		}
+		drive = min(drive, float64(share*capR))
 	}
 	if rev {
 		drive = -drive

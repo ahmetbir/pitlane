@@ -72,7 +72,7 @@ const XQ = Math.round(X * 100), ZQ = Math.round(Z * 100);
 
 const WELCOME = {
   t: "welcome", you: 7, code: "K3FQ", car: 4, handling: "arcade", contact: "soft", laps: 3, track: "kiyi", creator: true,
-  setup: [6, 6, 58, 3, 5, 5, 2], dmg: { fw: 0, rw: 0, su: 0 },
+  setup: [6, 6, 58, 3, 5, 5, 1], dmg: { fw: 0, rw: 0, su: 0 },
 };
 const snap = (tick: number, ack: number, phase = "racing") => ({
   t: "snap", tick, ack, phase, clock: 0,
@@ -150,9 +150,9 @@ function drive30(welcome: object, onGrid: (s: Session, c: FakeConn) => void): nu
 
 test("prediction takes the welcome's setup and damage, accepted readies and dmg messages", () => {
   const base = drive30({}, () => {});
-  const tall = drive30({ setup: [6, 6, 58, 1, 5, 5, 2] }, () => {});
+  const tall = drive30({ setup: [6, 6, 58, 1, 5, 5, 1] }, () => {});
   assert.notEqual(tall, base, "the welcome's gearing should change the prediction");
-  assert.equal(drive30({}, (s) => s.ready([6, 6, 58, 1, 5, 5, 2])), tall, "a ready on the grid is the server's setup");
+  assert.equal(drive30({}, (s) => s.ready([6, 6, 58, 1, 5, 5, 1])), tall, "a ready on the grid is the server's setup");
   const lost = drive30({ dmg: { fw: 1000, rw: 0, su: 0 } }, () => {});
   assert.equal(drive30({}, (_s, c) => c.recv({ t: "dmg", car: 4, fw: 1000, rw: 0, su: 0 })), lost, "dmg rebuilds the own model");
   assert.equal(drive30({}, (_s, c) => c.recv({ t: "dmg", car: 5, fw: 1000, rw: 0, su: 0 })), base, "another car's dmg is not ours");
@@ -163,9 +163,9 @@ test("a ready outside the grid or before any snapshot does not change the predic
   const c = conns[0];
   c.open();
   c.recv(WELCOME);
-  s.ready([6, 6, 58, 1, 5, 5, 2]); // no snapshot yet: phase unknown
+  s.ready([6, 6, 58, 1, 5, 5, 1]); // no snapshot yet: phase unknown
   c.recv(snap(100, 0, "racing"));
-  s.ready([6, 6, 58, 1, 5, 5, 2]); // racing: the server ignores it
+  s.ready([6, 6, 58, 1, 5, 5, 1]); // racing: the server ignores it
   for (let i = 0; i < 30; i++) s.input({ throttle: 0.4, brake: 0, steer: 0.3 });
   s.frame(0);
   const x = s.ownCar()!.x;

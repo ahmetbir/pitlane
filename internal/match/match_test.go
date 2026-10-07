@@ -112,7 +112,7 @@ func TestStartRules(t *testing.T) {
 	}
 	out.take()
 	m.Handle(a, protocol.ClientMsg{T: protocol.TStart}, out)
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 1}}, out)
 	ns = of[netproto.NoticeMsg](out.take())
 	if len(ns) != 2 || ns[0].Code != protocol.CodeNotGrid || ns[1].Code != protocol.CodeNotGrid {
 		t.Fatalf("%+v", ns)
@@ -148,7 +148,7 @@ func run(m *Match, out *fakeOut, n int, pred func() bool) {
 func TestFullFlow(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Ace")
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 1}}, out)
 	m.Step(nil, out) // everyone ready: the grid ends
 	if m.r.Phase() != race.Lights {
 		t.Fatalf("phase %v", m.r.Phase())
@@ -284,7 +284,7 @@ func TestChatScopeEveryone(t *testing.T) {
 func TestResetBroadcast(t *testing.T) {
 	m, out := newMatch(), &fakeOut{}
 	a := join(t, m, out, "Idle")
-	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 2}}, out)
+	m.Handle(a, protocol.ClientMsg{T: protocol.TReady, Setup: &protocol.SetupInts{6, 6, 58, 3, 5, 5, 1}}, out)
 	run(m, out, 20*60, func() bool { return m.r.Phase() == race.Racing })
 	st := &m.r.Cars()[a-1].St
 	st.HX, st.HZ, st.H = -st.HX, -st.HZ, st.H+math.Pi

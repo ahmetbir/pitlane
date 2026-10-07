@@ -93,7 +93,7 @@ test("setup clamps and wing loss", () => {
 });
 
 test("non-finite input is ignored", () => {
-  const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 2], { frontWing: 0, rearWing: 0, susp: 0 });
+  const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 1], { frontWing: 0, rearWing: 0, susp: 0 });
   const mk = (): State => ({ x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 20, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 3, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } });
   const a = mk(), b = mk();
   step(a, p, { throttle: NaN, brake: Infinity, steer: -Infinity }, { mu: NaN, drag: 0 });

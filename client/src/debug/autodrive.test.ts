@@ -8,7 +8,7 @@ import { AutoDriver } from "./autodrive.ts";
 test("the debug driver laps from the pole without touching a wall", () => {
   const t = kiyi(), g = t.grid[0];
   const st: State = { x: g.x, z: g.z, h: g.h, hx: Math.cos(g.h), hz: Math.sin(g.h), vx: 0, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 1, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
-  const p = newParams(Handling.Arcade, [6, 6, 58, 3, 5, 5, 2], st.dmg);
+  const p = newParams(Handling.Arcade, [6, 6, 58, 3, 5, 5, 1], st.dmg);
   const d = new AutoDriver(t, 17);
   const hint = { i: -1 };
   let s = t.locate(st.x, st.z, -1).s, dist = 0, ticks = 0, worst = 0;

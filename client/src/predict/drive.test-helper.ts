@@ -10,7 +10,7 @@ import { kiyi } from "../track/track.ts";
 import { angleDiff, Own, type OwnState } from "./own.ts";
 
 export const track = kiyi();
-export const SETUP: Setup = [6, 6, 58, 3, 5, 5, 2];
+export const SETUP: Setup = [6, 6, 58, 3, 5, 5, 1];
 export const HANDLING = Handling.Arcade;
 const RUN = { running: true };
 

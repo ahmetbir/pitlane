@@ -117,13 +117,13 @@ func TestSnapWire(t *testing.T) {
 }
 
 func TestMessageWires(t *testing.T) {
-	w := Welcome{Car: 4, Handling: "arcade", Contact: "soft", Laps: 5, Track: "kiyi", Creator: true, Setup: SetupInts{6, 6, 58, 3, 5, 5, 2}}
+	w := Welcome{Car: 4, Handling: "arcade", Contact: "soft", Laps: 5, Track: "kiyi", Creator: true, Setup: SetupInts{6, 6, 58, 3, 5, 5, 1}}
 	w.T, w.You, w.Code = "welcome", 7, "K3FQ"
 	for _, c := range []struct {
 		v    any
 		want string
 	}{
-		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,2],"dmg":{"fw":0,"rw":0,"su":0}}`},
+		{w, `{"t":"welcome","you":7,"code":"K3FQ","car":4,"handling":"arcade","contact":"soft","laps":5,"track":"kiyi","creator":true,"setup":[6,6,58,3,5,5,1],"dmg":{"fw":0,"rw":0,"su":0}}`},
 		{NewDmg(3, DamageInts{FW: 420, SU: 75}), `{"t":"dmg","car":3,"fw":420,"rw":0,"su":75}`},
 		{LightsMsg{T: TLights, On: 3}, `{"t":"lights","on":3}`},
 		{LightsMsg{T: TLights, Out: 2210}, `{"t":"lights","on":0,"out":2210}`},

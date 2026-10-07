@@ -506,7 +506,7 @@ func TestSetupClamp(t *testing.T) {
 	if got := (Setup{6, 6, 58, 3, 5, 5, 4}).Clamp(); got[TC] != 3 {
 		t.Fatalf("clamp TC: %v", got)
 	}
-	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5, 2}) || DefaultSetup().Clamp() != DefaultSetup() {
+	if DefaultSetup() != (Setup{6, 6, 58, 3, 5, 5, 1}) || DefaultSetup().Clamp() != DefaultSetup() {
 		t.Fatalf("default: %v", DefaultSetup())
 	}
 }
@@ -749,15 +749,22 @@ func TestLaunchHoldsTheCar(t *testing.T) {
 	}
 }
 
-// A launch is never slower than a standing start from idle, Sim with TC 2
-// and Arcade. (It is not quicker either: from rest the drive is capped by
-// traction, which the idle torque already exceeds about fivefold.)
-func TestLaunchNoSlowerThanIdleStart(t *testing.T) {
-	for _, h := range []Handling{Sim, Arcade} {
-		with, without := zeroTo(h, DefaultSetup(), 100/3.6, true), zeroTo(h, DefaultSetup(), 100/3.6, false)
-		t.Logf("%v: 0–100 km/h launch %.3f s, no launch %.3f s (gain %.3f s)", h, with, without, without-with)
-		if !(with <= without) {
-			t.Errorf("%v: 0–100 km/h launch %.3f s, no launch %.3f s", h, with, without)
+// A launch's clutch slip lets the drive use the rear's whole capacity (TC
+// share 1.0) whatever the level: 0–100 km/h at least 0.15 s quicker than from
+// idle in Arcade and Sim TC 3, about 0.1 s at Sim TC 2. Sim TC 1, the
+// default, already allows share 1.0, so there the launch is no slower but no
+// quicker either.
+func TestLaunchBeatsIdleStart(t *testing.T) {
+	for _, c := range []struct {
+		h       Handling
+		tc      int
+		minGain float64
+	}{{Arcade, 1, 0.15}, {Sim, 1, 0}, {Sim, 2, 0.08}, {Sim, 3, 0.15}} {
+		su := with(DefaultSetup(), TC, c.tc)
+		with, without := zeroTo(c.h, su, 100/3.6, true), zeroTo(c.h, su, 100/3.6, false)
+		t.Logf("%v TC %d: 0–100 km/h launch %.3f s, from idle %.3f s (gain %.3f s)", c.h, c.tc, with, without, without-with)
+		if !(with <= without-c.minGain) {
+			t.Errorf("%v TC %d: 0–100 km/h launch %.3f s, from idle %.3f s (want a gain ≥ %.2f s)", c.h, c.tc, with, without, c.minGain)
 		}
 	}
 }

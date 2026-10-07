@@ -50,7 +50,7 @@ const (
 
 var setupMin, setupMax = Setup{1, 1, 50, 1, 1, 1, 0}, Setup{11, 11, 70, 5, 10, 9, 3}
 
-func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 2} }
+func DefaultSetup() Setup { return Setup{6, 6, 58, 3, 5, 5, 1} }
 
 // tcShares[level] is the share of the rear capacity the drive may ask for; 0 is
 // no limit (traction control off).
@@ -179,6 +179,7 @@ const (
 	launchRPM = 9000.0             // the hold revs the engine to this
 	launchUp  = 133.33333333333334 // rpm gained per step at full throttle on the hold (8000 rpm/s × DT)
 	slipDrop  = 100.0              // rpm lost per step while the clutch slips (6000 rpm/s × DT)
+	launchEnd = 5.0                // the clutch slip ends at this speed (m/s) at the latest
 )
 
 // Derived constants, written as the doubles that step-by-step float64
