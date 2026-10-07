@@ -80,9 +80,11 @@ func Step(st *State, p *Params, in Input, env Env) {
 	capF, capR = float64(capF*kF), float64(capR*kR)
 	fyF, fyR = float64(fyF*kF), float64(fyR*kR)
 	capX := capR // rear longitudinal capacity
-	if eff := float64(in.Throttle * in.Throttle); eff > diffOn {
-		// Diff lock acts on the mapped throttle (torque share): more traction
-		// under power, less rear lateral capacity.
+	if eff := min(float64(in.Throttle*in.Throttle), drive/max(capR, 1)); eff > diffOn {
+		// Diff lock acts on the smaller of the pedal demand and the share of
+		// the rear's capacity the drive really asks (full throttle at top
+		// speed asks little): more traction under power, less rear lateral
+		// capacity.
 		kd := max(1-float64(p.DiffK*eff), 0)
 		capX = float64(capR * (1 + p.DiffX))
 		capR, fyR = float64(capR*kd), float64(fyR*kd)
@@ -104,6 +106,12 @@ func Step(st *State, p *Params, in Input, env Env) {
 	bF := min(float64(brk*p.BrakeF), capF)
 	bR := min(float64(brk*p.BrakeR), capR) // no diff gain on braking
 	fxF := -float64(ux * bF)
+	if p.Assists {
+		// Arcade traction control is predictive: the drive never asks more
+		// than tcShare of the rear's capacity, so a keyboard's full throttle
+		// still leaves the rear lateral grip to turn with.
+		drive = min(drive, float64(tcShare*capR))
+	}
 	fxR := clamp(drive-float64(ux*bR), capX)
 	fyF = circle(fxF, fyF-float64(uy*bF), capF)
 	fyR = circle(fxR, fyR-float64(uy*bR), capR)

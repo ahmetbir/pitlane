@@ -46,6 +46,12 @@ func TestTakeoverCreditsOwnLapsOnly(t *testing.T) {
 	}
 	c := r.cars[id-1]
 	from := c.Lap
+	// The lap in progress counts when it started on the takeover tick (the
+	// pilot drove all of it); otherwise the first own lap is the next one.
+	firstOwn := from + 2
+	if c.LapStart >= r.Tick() {
+		firstOwn = from + 1
+	}
 	if from < 1 || c.Best == 0 {
 		t.Fatalf("taken over at lap %d best %d: want a bot lap done", from, c.Best)
 	}
@@ -54,7 +60,7 @@ func TestTakeoverCreditsOwnLapsOnly(t *testing.T) {
 	for r.Tick() < 900*60 {
 		ev := r.Step(autopilot(r))
 		for _, l := range ev.Laps {
-			if l.Car == id && l.Lap > from+1 && l.Valid && (own == 0 || l.Ms < own) {
+			if l.Car == id && l.Lap >= firstOwn && l.Valid && (own == 0 || l.Ms < own) {
 				own = l.Ms
 			}
 		}

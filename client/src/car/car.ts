@@ -148,10 +148,11 @@ const yawDamp = 0.9;
 const yawCapK = 1.15;
 const arcadeVX = 60.0;
 const tcCut = 0.5;
+const tcShare = 0.8;
 const absCut = 0.6;
 const tcSlip = 0.9;
 const diffOn = 0.3;
-const diffStep = 0.04;
+const diffStep = 0.015;
 const diffGrip = 0.03;
 const latFront0 = 0.3;
 const latFrontK = 0.05;
@@ -303,7 +304,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   fyF = fyF * kF;
   fyR = fyR * kR;
   let capX = capR;
-  const eff = inp.throttle * inp.throttle;
+  const eff = Math.min(inp.throttle * inp.throttle, drive / Math.max(capR, 1));
   if (eff > diffOn) {
     const kd = Math.max(1 - p.diffK * eff, 0);
     capX = capR * (1 + p.diffX);
@@ -325,6 +326,7 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
   const bF = Math.min(brk * p.brakeF, capF);
   const bR = Math.min(brk * p.brakeR, capR);
   const fxF = -(ux * bF);
+  if (p.assists) drive = Math.min(drive, tcShare * capR);
   const fxR = clamp(drive - ux * bR, capX);
   fyF = circle(fxF, fyF - uy * bF, capF);
   fyR = circle(fxR, fyR - uy * bR, capR);

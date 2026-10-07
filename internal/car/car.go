@@ -133,25 +133,26 @@ const (
 	brakeMax   = 30e3
 	rollRes    = 120.0
 	steerLock  = 0.30
-	latLoss    = 0.12 // grip loss per unit of lateral transfer / axle load
-	suspLoss   = 0.15 // grip loss at Dmg.Susp = 1
-	minLoad    = 0.1  // axle load floor, × static load
-	wingLost   = 0.6  // Dmg.FrontWing above this: the wing is gone
-	lostWingCL = 0.3  // front C_L factor with the wing gone
-	lowSpeed   = 1.0  // below this total speed lateral force blends to 0
-	slipCap    = 0.6  // slip angle clamp (rad)
-	slipVX     = 3.0  // slip denominator floor (m/s)
-	yawDamp    = 0.9  // low-speed yaw damping per step
-	yawCapK    = 1.15 // Arcade yaw cap margin over available lateral grip
-	arcadeVX   = 60.0 // Arcade steer scaling speed
-	tcCut      = 0.5  // Arcade TC throttle factor
-	absCut     = 0.6  // Arcade ABS brake factor
-	tcSlip     = 0.9  // TC engages above this fraction of αpk (rear)
-	diffOn     = 0.3  // diff lock acts above this mapped throttle (pedal²)
-	diffStep   = 0.04 // rear lateral capacity loss per diff step × mapped throttle
-	diffGrip   = 0.03 // rear longitudinal capacity gain per diff step under throttle
-	latFront0  = 0.3  // front share of lateral transfer at SuspBalance 1
-	latFrontK  = 0.05 // … per SuspBalance step
+	latLoss    = 0.12  // grip loss per unit of lateral transfer / axle load
+	suspLoss   = 0.15  // grip loss at Dmg.Susp = 1
+	minLoad    = 0.1   // axle load floor, × static load
+	wingLost   = 0.6   // Dmg.FrontWing above this: the wing is gone
+	lostWingCL = 0.3   // front C_L factor with the wing gone
+	lowSpeed   = 1.0   // below this total speed lateral force blends to 0
+	slipCap    = 0.6   // slip angle clamp (rad)
+	slipVX     = 3.0   // slip denominator floor (m/s)
+	yawDamp    = 0.9   // low-speed yaw damping per step
+	yawCapK    = 1.15  // Arcade yaw cap margin over available lateral grip
+	arcadeVX   = 60.0  // Arcade steer scaling speed
+	tcCut      = 0.5   // Arcade TC throttle factor
+	tcShare    = 0.8   // Arcade TC: drive ≤ this share of the rear capacity
+	absCut     = 0.6   // Arcade ABS brake factor
+	tcSlip     = 0.9   // TC engages above this fraction of αpk (rear)
+	diffOn     = 0.3   // diff lock acts above this mapped throttle (pedal²)
+	diffStep   = 0.015 // rear lateral capacity loss per diff step × traction share
+	diffGrip   = 0.03  // rear longitudinal capacity gain per diff step under throttle
+	latFront0  = 0.3   // front share of lateral transfer at SuspBalance 1
+	latFrontK  = 0.05  // … per SuspBalance step
 )
 
 // Derived constants, written as the doubles that step-by-step float64

@@ -527,3 +527,38 @@ func TestStepIsDeterministic(t *testing.T) {
 		t.Fatalf("diverged:\n%+v\n%+v", a, b)
 	}
 }
+
+// A keyboard holds full throttle and slews the steer to full lock at 3/s. In
+// Arcade that must never spin the car, whatever the differential: the
+// traction control leaves rear grip and the diff acts on real traction.
+func TestArcadeKeyboardFullThrottleTurnsWithoutSpinning(t *testing.T) {
+	for _, diff := range []int{1, 5, 10} {
+		for _, v0 := range []float64{25, 40, 60} {
+			for _, hold := range []float64{0.2, 1.5} {
+				su := DefaultSetup()
+				su[Diff] = diff
+				p := NewParams(Arcade, su, Damage{})
+				st := State{HX: 1, VX: v0, Gear: 1}
+				for i := 0; i < 120; i++ {
+					Step(&st, &p, Input{Throttle: 0.5}, Env{Mu: 1})
+				}
+				steer := 0.0
+				for i := 0; i < 360; i++ {
+					target := 0.0
+					if float64(i)*DT < hold {
+						target = 1
+					}
+					rate := 3.0
+					if target == 0 {
+						rate = 5
+					}
+					steer += math.Max(-rate*DT, math.Min(rate*DT, target-steer))
+					Step(&st, &p, Input{Throttle: 1, Steer: math.Round(steer*127) / 127}, Env{Mu: 1})
+					if slip := math.Abs(math.Atan2(st.VY, math.Max(st.VX, 0.1))) * 180 / math.Pi; slip > 20 || st.VX < 0 {
+						t.Fatalf("diff %d v0 %.0f hold %.1fs: slip %.1f° at tick %d (spin)", diff, v0, hold, slip, i)
+					}
+				}
+			}
+		}
+	}
+}
