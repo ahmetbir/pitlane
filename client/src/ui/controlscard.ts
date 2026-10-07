@@ -1,7 +1,7 @@
 // The controls card: the keyboard and gamepad keys at a glance, rendered from
 // the bindings. Shown once before the first race, then on F1 / ? in a race
-// and from the home page. It covers only its own box, so the car can still be
-// driven while it is up; Escape closes it.
+// and from the home page. While it is up in a race the car gets neutral input
+// and coasts (app.ts blocks the controls); Escape closes it.
 import { fill, h } from "roomkit/ui/dom";
 import { t } from "../i18n/index.ts";
 import { keyRows, padRows, type Bindings, type KeyRow } from "../input/bindings.ts";

@@ -46,8 +46,9 @@ export function play(o: PlayOpts): void {
   const track = kiyi();
   const settings = loadSettings();
   const keys = settings.keys;
-  const controls = browserControls(keys, () => session.ownCar()?.vx ?? 0);
   const book = new Book(() => ({ keys }));
+  // While the manual or the controls card is up the car gets neutral input and coasts.
+  const controls = browserControls(keys, () => session.ownCar()?.vx ?? 0, () => book.isOpen() || card.isOpen());
   const card = new ControlsCard({
     closed: () => {
       if (settings.seenControls) return;

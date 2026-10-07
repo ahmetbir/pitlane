@@ -45,6 +45,12 @@ export type ControlsDeps = {
   bindings?: Bindings;
   /** The own car's forward speed VX (m/s); 0 before it is on track. */
   vx?: () => number;
+  /**
+   * True while a screen covers the race (the manual, the controls card):
+   * the car gets neutral input and driving keys keep their browser default
+   * (Space and the arrows scroll that screen). Only the help key still counts.
+   */
+  blocked?: () => boolean;
 };
 
 /** Keys whose browser default (scroll, help page) a game press must not trigger. */
@@ -133,6 +139,11 @@ export class Controls {
   }
 
   sample(dtS: number): WireInput {
+    if (this.deps.blocked?.()) { // the car coasts; keys held under the screen do not count after it
+      this.held.clear();
+      this.th = this.br = this.st = 0;
+      return wireInput({ throttle: 0, brake: 0, steer: 0 });
+    }
     const vx = this.deps.vx?.() ?? 0;
     const stopped = !(vx > STOPPED_VX);
     const pad = this.pollPad(stopped);
@@ -167,6 +178,12 @@ export class Controls {
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+    if (this.deps.blocked?.()) {
+      if (a !== "help") return;
+      if (NO_DEFAULT.has(e.code)) e.preventDefault?.(); // F1: not the browser's help page
+      if (!e.repeat) this.pressed.add(a);
+      return;
+    }
     if (NO_DEFAULT.has(e.code)) e.preventDefault?.();
     if ((a === "camera" || a === "help") && !this.held.has(a)) this.pressed.add(a);
     this.held.add(a);
@@ -224,8 +241,8 @@ export class Controls {
   }
 }
 
-/** Controls on the browser's window and navigator; vx: the own car's forward speed. */
-export function browserControls(bindings: Bindings, vx: () => number): Controls {
+/** Controls on the browser's window and navigator; vx: the own car's forward speed; blocked: a screen covers the race. */
+export function browserControls(bindings: Bindings, vx: () => number, blocked: () => boolean): Controls {
   return new Controls({
     target: window,
     doc: document,
@@ -233,5 +250,6 @@ export function browserControls(bindings: Bindings, vx: () => number): Controls 
     now: () => performance.now() / 1000,
     bindings,
     vx,
+    blocked,
   });
 }

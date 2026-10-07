@@ -15,7 +15,8 @@ function rig(bindings?: Bindings) {
   const doc = { hidden: false, addEventListener: (_: string, f: () => void) => dfns.push(f), removeEventListener: (_: string, f: () => void) => dfns.splice(dfns.indexOf(f), 1) };
   let throws = false;
   let vx = 0;
-  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t, bindings, vx: () => vx });
+  let blocked = false;
+  const c = new Controls({ target, doc, getGamepads: () => { if (throws) throw new Error("x"); return [pad]; }, now: () => t, bindings, vx: () => vx, blocked: () => blocked });
   const fire = (k: string, e: object) => (fns[k] ?? []).forEach((f) => f(e));
   return {
     c,
@@ -26,6 +27,7 @@ function rig(bindings?: Bindings) {
     setPad: (p: PadLike) => (pad = p),
     advance: (s: number) => (t += s),
     setVX: (v: number) => (vx = v),
+    setBlocked: (v: boolean) => (blocked = v),
   };
 }
 const mkPad = (axis0: number, lt = 0, rt = 0, a = 0, b = 0): PadLike => ({
@@ -297,4 +299,32 @@ test("gamepad: B reverses when stopped and brakes when rolling; A + RT holds a l
   r.setVX(0);
   r.setPad(mkPad(0, 0, 0, 1, 0));
   assert.deepEqual(r.c.sample(0.016), { th: 0, br: 0, st: 0 }, "A alone: nothing");
+});
+
+test("a screen over the race (manual, controls card): neutral input, keys keep their default, help still toggles", () => {
+  const r = rig();
+  r.down("KeyW");
+  r.down("KeyA");
+  r.c.sample(0.5);
+  r.setBlocked(true);
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 0, st: 0 }, "keys held when the screen opened no longer drive");
+  let prevented = 0;
+  const pd = () => prevented++;
+  r.down("Space", {}, { preventDefault: pd });
+  r.down("ArrowDown", {}, { preventDefault: pd });
+  r.down("KeyS");
+  r.down("ShiftLeft", {}, { shiftKey: true });
+  r.down("KeyW", {}, { shiftKey: true });
+  assert.deepEqual(r.c.sample(0.2), { th: 0, br: 0, st: 0 }, "no throttle, brake, steer or reverse");
+  assert.equal(prevented, 0, "Space and the arrows act on the screen");
+  r.setPad(mkPad(-1, 0.8, 1, 0, 1));
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 0, st: 0 }, "the pad is neutral too");
+  r.setPad(null);
+  r.down("F1", {}, { preventDefault: pd });
+  assert.equal(r.c.take("help"), true, "help still toggles the card");
+  assert.equal(prevented, 1, "F1's browser default is still prevented");
+  r.setBlocked(false);
+  assert.deepEqual(r.c.sample(0.016), { th: 0, br: 0, st: 0 }, "closed: keys pressed under the screen are not held");
+  r.down("KeyW");
+  assert.equal(r.c.sample(0.15).th, 100, "pressed again: drives");
 });
