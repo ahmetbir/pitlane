@@ -58,6 +58,7 @@ func TestGhostCarsPassThrough(t *testing.T) {
 func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	r := contactRace(Soft)
 	a, b := r.cars[0], r.cars[1]
+	// Side by side, parallel: a resting overlap is only separated, no speed lost.
 	put(r, a, 100, 0.8, 30)
 	put(r, b, 100, -0.8, 30)
 	va, vb := a.St.Speed(), b.St.Speed()
@@ -69,21 +70,17 @@ func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) {
 		t.Fatalf("soft damage %+v %+v", a.St.Dmg, b.St.Dmg)
 	}
-	for _, c := range []struct {
-		name   string
-		v0, v1 float64
-	}{{"A", va, a.St.Speed()}, {"B", vb, b.St.Speed()}} {
-		if c.v1 >= c.v0 || c.v1 < 0.95*c.v0-1e-9 {
-			t.Fatalf("%s speed %.4f → %.4f", c.name, c.v0, c.v1)
-		}
-		t.Logf("%s speed %.4f → %.4f (%.2f %%)", c.name, c.v0, c.v1, 100*(1-c.v1/c.v0))
+	if a.St.Speed() != va || b.St.Speed() != vb {
+		t.Fatalf("resting overlap took speed: A %.4f → %.4f, B %.4f → %.4f", va, a.St.Speed(), vb, b.St.Speed())
 	}
 	t.Logf("separation %.4f m", d)
 
-	// Drifting into each other: the approaching normal velocity is removed.
+	// Drifting into each other: the approaching normal velocity is removed and both lose
+	// 5 % of what is left.
 	put(r, a, 100, 0.8, 30)
 	put(r, b, 100, -0.8, 30)
 	b.St.VY = 2
+	va, vb = a.St.Speed(), b.St.Speed()
 	r.resolveContacts(nil)
 	n := vec{a.St.X - b.St.X, a.St.Z - b.St.Z}
 	if vn := worldVel(&a.St).sub(worldVel(&b.St)).dot(n); vn < -1e-9 {
@@ -91,6 +88,38 @@ func TestSoftSeparatesWithoutDamage(t *testing.T) {
 	}
 	if a.St.Dmg != (car.Damage{}) || b.St.Dmg != (car.Damage{}) {
 		t.Fatal("soft damage while drifting")
+	}
+	for _, c := range []struct {
+		name   string
+		v0, v1 float64
+	}{{"A", va, a.St.Speed()}, {"B", vb, b.St.Speed()}} {
+		if c.v1 >= c.v0 || c.v1 < 0.94*c.v0 {
+			t.Fatalf("%s speed %.4f → %.4f", c.name, c.v0, c.v1)
+		}
+		t.Logf("%s speed %.4f → %.4f (%.2f %%)", c.name, c.v0, c.v1, 100*(1-c.v1/c.v0))
+	}
+}
+
+// A soft bump costs speed once, on the tick the cars close in; staying in contact
+// afterwards (pressed together side by side, tick after tick) costs nothing.
+func TestSoftBumpCostsSpeedOnce(t *testing.T) {
+	r := contactRace(Soft)
+	a, b := r.cars[0], r.cars[1]
+	put(r, a, 100, 0.8, 30)
+	put(r, b, 100, -0.8, 30)
+	b.St.VY = 0.5
+	bumps := 0
+	for k := 0; k < 30; k++ {
+		va, vb := a.St.Speed(), b.St.Speed()
+		r.resolveContacts(nil)
+		if a.St.Speed() < va || b.St.Speed() < vb {
+			bumps++
+		}
+		// Pressed back together each tick without closing in: a resting overlap.
+		b.St.Z, b.St.X = b.St.Z+0.01*a.St.HX, b.St.X-0.01*a.St.HZ
+	}
+	if bumps != 1 {
+		t.Fatalf("speed lost on %d ticks, want 1 (the bump)", bumps)
 	}
 }
 

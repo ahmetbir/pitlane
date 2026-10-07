@@ -7,13 +7,14 @@ import (
 )
 
 const (
-	softKeep      = 0.95   // speed kept per soft contact
+	softKeep      = 0.95   // speed kept per soft bump (cars closing in)
 	fullCorrect   = 0.8    // share of the overlap removed per tick
 	restitution   = 0.25   // e
 	friction      = 0.4    // Coulomb μ between cars
 	damageDead    = 1000.0 // N·s absorbed without damage (rubs, nudges)
 	damageImpulse = 8000.0 // N·s above the dead zone for a full unit of damage
 	tangentMin    = 1e-9   // m/s: below this sliding speed no friction impulse
+	closingMin    = 1e-9   // m/s: below this closing speed a soft overlap is resting (rounding)
 )
 
 // wallHit is one car's barrier contact this tick (moveCar's impulse and outward normal).
@@ -87,7 +88,8 @@ func (r *Race) resolveContacts(walls *[numCars]wallHit) []CarID {
 }
 
 // softPair: overlapping boxes pushed apart along the separating normal (half the depth
-// each), approaching normal velocity removed, 5 % speed lost. No spin, no damage.
+// each). Cars that are closing in lose the approaching normal velocity and 5 % of their
+// speed (a bump); a resting or sliding overlap is only separated. No spin, no damage.
 func softPair(a, b *car.State) {
 	s, hit := satOBB(boxOf(a), boxOf(b))
 	if !hit {
@@ -98,11 +100,11 @@ func softPair(a, b *car.State) {
 	b.X, b.Z = b.X+push.x, b.Z+push.z
 
 	va, vb := worldVel(a), worldVel(b)
-	if vn := vb.sub(va).dot(s.n); vn < 0 {
+	if vn := vb.sub(va).dot(s.n); vn < -closingMin {
 		va, vb = va.add(s.n.scale(vn/2)), vb.sub(s.n.scale(vn/2))
+		setWorldVel(a, va.scale(softKeep))
+		setWorldVel(b, vb.scale(softKeep))
 	}
-	setWorldVel(a, va.scale(softKeep))
-	setWorldVel(b, vb.scale(softKeep))
 }
 
 // fullPair: SAT boxes, positional correction, impulse with friction and spin, damage.
