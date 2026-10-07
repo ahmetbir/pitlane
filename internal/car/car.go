@@ -96,7 +96,10 @@ type Env struct{ Mu, Drag float64 }
 // State is one car. (HX, HZ) is the unit heading vector the step integrates;
 // H is the accumulated heading angle, for display only. AX is the last step's
 // body longitudinal acceleration (m/s²); it drives longitudinal load transfer,
-// so it is part of the replayable state. Dmg is bookkeeping only: damage
+// so it is part of the replayable state. RPM is the engine speed: the wheels'
+// (at least idle), except during a launch (Launch), when the brakes hold the
+// car while the engine revs, then the clutch slips until engine and wheels
+// meet; both are replayable state too. Dmg is bookkeeping only: damage
 // reaches the model through NewParams, so callers rebuild Params whenever Dmg
 // changes.
 type State struct {
@@ -107,6 +110,7 @@ type State struct {
 	RPM       float64
 	Gear      int // 1..8; 0 is reverse
 	AX        float64
+	Launch    bool
 	Dmg       Damage
 }
 
@@ -166,6 +170,15 @@ const (
 	diffGrip   = 0.03  // rear longitudinal capacity gain per diff step under throttle
 	latFront0  = 0.3   // front share of lateral transfer at SuspBalance 1
 	latFrontK  = 0.05  // … per SuspBalance step
+)
+
+// Launch constants.
+const (
+	launchVX  = 0.5                // the launch hold acts below this |VX| (m/s)
+	launchBrk = 0.5                // … with at least this brake and some throttle
+	launchRPM = 9000.0             // the hold revs the engine to this
+	launchUp  = 133.33333333333334 // rpm gained per step at full throttle on the hold (8000 rpm/s × DT)
+	slipDrop  = 100.0              // rpm lost per step while the clutch slips (6000 rpm/s × DT)
 )
 
 // Derived constants, written as the doubles that step-by-step float64

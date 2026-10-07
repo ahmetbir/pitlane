@@ -10,7 +10,7 @@ import {
 interface GoDamage { FrontWing: number; RearWing: number; Susp: number }
 interface GoState {
   X: number; Z: number; H: number; HX: number; HZ: number; VX: number; VY: number; R: number;
-  Delta: number; RPM: number; Gear: number; AX: number; Dmg: GoDamage;
+  Delta: number; RPM: number; Gear: number; AX: number; Launch: boolean; Dmg: GoDamage;
 }
 interface GoParams {
   Mu: number; AlphaF: number; AlphaR: number; SteerRate: number; Assists: boolean; TCShare: number;
@@ -29,7 +29,7 @@ const file: CarFile = JSON.parse(readFileSync(new URL("../../../testdata/vectors
 const damage = (d: GoDamage): Damage => ({ frontWing: d.FrontWing, rearWing: d.RearWing, susp: d.Susp });
 const state = (s: GoState): State => ({
   x: s.X, z: s.Z, h: s.H, hx: s.HX, hz: s.HZ, vx: s.VX, vy: s.VY, r: s.R,
-  delta: s.Delta, rpm: s.RPM, gear: s.Gear, ax: s.AX, dmg: damage(s.Dmg),
+  delta: s.Delta, rpm: s.RPM, gear: s.Gear, ax: s.AX, launch: s.Launch, dmg: damage(s.Dmg),
 });
 const params = (p: GoParams): Params => ({
   mu: p.Mu, alphaF: p.AlphaF, alphaR: p.AlphaR, steerRate: p.SteerRate, assists: p.Assists, tcShare: p.TCShare,
@@ -94,7 +94,7 @@ test("setup clamps and wing loss", () => {
 
 test("non-finite input is ignored", () => {
   const p = newParams(Handling.Sim, [6, 6, 58, 3, 5, 5, 2], { frontWing: 0, rearWing: 0, susp: 0 });
-  const mk = (): State => ({ x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 20, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 3, ax: 0, dmg: { frontWing: 0, rearWing: 0, susp: 0 } });
+  const mk = (): State => ({ x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 20, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 3, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } });
   const a = mk(), b = mk();
   step(a, p, { throttle: NaN, brake: Infinity, steer: -Infinity }, { mu: NaN, drag: 0 });
   step(b, p, { throttle: 0, brake: 0, steer: 0 }, { mu: 0, drag: 0 });

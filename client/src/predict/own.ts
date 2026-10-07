@@ -70,7 +70,7 @@ class CarSmoother implements Smoother<OwnState> {
 }
 
 function blank(): OwnState {
-  return { x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 0, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 1, ax: 0, dmg: { ...INTACT }, seg: -1 };
+  return { x: 0, z: 0, h: 0, hx: 1, hz: 0, vx: 0, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 1, ax: 0, launch: false, dmg: { ...INTACT }, seg: -1 };
 }
 
 export class Own {
@@ -167,7 +167,7 @@ export class Own {
     return {
       x: row.x, z: row.z, h, hx: Math.cos(h), hz: Math.sin(h),
       vx: row.vx, vy: row.vy, r: row.r, delta: row.delta,
-      rpm: like.rpm, gear: this.gearAt(sv, like.gear), ax: like.ax,
+      rpm: like.rpm, gear: this.gearAt(sv, like.gear), ax: like.ax, launch: like.launch,
       dmg: { ...this.dmg },
       seg: this.track.locate(row.x, row.z, like.seg).i,
     };

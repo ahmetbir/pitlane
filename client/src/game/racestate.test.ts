@@ -57,7 +57,7 @@ test("wrong way: driving against the track direction", () => {
   rs.apply(snap("lights", 0, [row(2, 500)]));
   rs.apply(snap("racing", 100, [row(2, 500)]));
   const seg = tr.segs[250];
-  const st = { x: seg.x, z: seg.z, h: 0, hx: -seg.tx, hz: -seg.tz, vx: 30, vy: 0, r: 0, delta: 0, rpm: 9000, gear: 4, ax: 0, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
+  const st = { x: seg.x, z: seg.z, h: 0, hx: -seg.tx, hz: -seg.tz, vx: 30, vy: 0, r: 0, delta: 0, rpm: 9000, gear: 4, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
   assert.equal(rs.hud(st).wrongWay, true);
   assert.equal(rs.hud({ ...st, hx: seg.tx, hz: seg.tz }).wrongWay, false);
   assert.equal(rs.hud({ ...st, vx: 2 }).wrongWay, false, "creeping: no warning");

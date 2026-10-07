@@ -24,7 +24,7 @@ export function runTrackView(canvas: HTMLCanvasElement, ui: HTMLElement | null):
   stage.add(circuit.root);
 
   const runners: Runner[] = track.grid.map((g, i) => {
-    const st: State = { x: g.x, z: g.z, h: g.h, hx: Math.cos(g.h), hz: Math.sin(g.h), vx: 0, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 1, ax: 0, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
+    const st: State = { x: g.x, z: g.z, h: g.h, hx: Math.cos(g.h), hz: Math.sin(g.h), vx: 0, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 1, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
     const mesh = buildCar(teamColour(i));
     stage.add(mesh.root);
     // The pole sitter is the quickest, so the field spreads out instead of driving through itself.

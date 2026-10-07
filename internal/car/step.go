@@ -74,10 +74,33 @@ func Step(st *State, p *Params, in Input, env Env) {
 		}
 	}
 	g := max(st.Gear, 1) - 1
-	rpm := max(sv*p.RPMPerMS[g], idleRPM)
+	rpm := max(sv*p.RPMPerMS[g], idleRPM) // the wheels' rpm
+
+	// Launch: (nearly) stopped with the brake and the throttle on, the brakes
+	// hold the car and the engine revs toward launchRPM (faster with more
+	// throttle). Brake released with the throttle held: the clutch slips, the
+	// engine falls toward the wheels' rpm and the drive takes its torque until
+	// they meet.
+	hold := !in.Reverse && abs(st.VX) < launchVX && in.Brake >= launchBrk && in.Throttle > 0
+	eng := st.RPM
+	if !(eng >= idleRPM) {
+		eng = idleRPM
+	} else if eng > limitRPM {
+		eng = limitRPM
+	}
+	switch {
+	case hold:
+		up := float64(launchUp * in.Throttle)
+		rpm = eng + min(max(launchRPM-eng, -up), up)
+		st.Launch = true
+	case st.Launch && thr > 0 && !rev && eng-slipDrop > rpm:
+		rpm = eng - slipDrop
+	default:
+		st.Launch = false
+	}
 	st.RPM = rpm
 	drive := 0.0 // magnitude; reverse flips its sign below
-	if thr > 0 && !(rev && st.VX < -revTop) {
+	if thr > 0 && !hold && !(rev && st.VX < -revTop) {
 		// Pedal map: torque × throttle², so part throttle is gentle. A forward
 		// gear pushes forward at any VX sign (a car rolling backwards
 		// recovers); reverse cuts out beyond revTop.

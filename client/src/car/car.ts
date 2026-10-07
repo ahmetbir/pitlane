@@ -113,6 +113,8 @@ export interface State {
   /** 1..8; 0 is reverse. */
   gear: number;
   ax: number;
+  /** A launch: the brakes hold the car while the engine revs, then the clutch slips until engine and wheels meet. */
+  launch: boolean;
   dmg: Damage;
 }
 
@@ -158,6 +160,12 @@ const arcadeVX = 60.0;
 const revEngage = 0.5;
 /** Reverse drive cuts out beyond this backward speed (m/s). */
 export const revTop = 8.0;
+const launchVX = 0.5;
+const launchBrk = 0.5;
+/** The engine rpm the launch hold revs to. */
+export const launchRPM = 9000.0;
+const launchUp = 133.33333333333334; // rpm per step at full throttle on the hold (8000 rpm/s)
+const slipDrop = 100.0; // rpm per step while the clutch slips (6000 rpm/s)
 const tcCut = 0.5;
 const tcShare = 0.8;
 /** Share of the rear capacity the drive may ask per TC level; 0 = no limit. */
@@ -313,10 +321,25 @@ export function step(st: State, p: Params, input: Input, env: Env): void {
     }
   }
   const g = Math.max(st.gear, 1) - 1;
-  const rpm = Math.max(sv * p.rpmPerMS[g], idleRPM);
+  let rpm = Math.max(sv * p.rpmPerMS[g], idleRPM); // the wheels' rpm
+
+  // Launch: the brakes hold the car while the engine revs; released, the clutch slips.
+  const hold = inp.reverse !== true && abs(st.vx) < launchVX && inp.brake >= launchBrk && inp.throttle > 0;
+  let eng = st.rpm;
+  if (!(eng >= idleRPM)) eng = idleRPM;
+  else if (eng > limitRPM) eng = limitRPM;
+  if (hold) {
+    const up = launchUp * inp.throttle;
+    rpm = eng + Math.min(Math.max(launchRPM - eng, -up), up);
+    st.launch = true;
+  } else if (st.launch && thr > 0 && !rev && eng - slipDrop > rpm) {
+    rpm = eng - slipDrop;
+  } else {
+    st.launch = false;
+  }
   st.rpm = rpm;
   let drive = 0.0; // magnitude; reverse flips its sign below
-  if (thr > 0 && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
+  if (thr > 0 && !hold && !(rev && st.vx < -revTop)) drive = thr * thr * torque(rpm) * p.drive[g];
 
   // Lateral slip forces, then lateral transfer as grip loss on each axle.
   const baseMu = mu * p.mu * p.gripDmg;

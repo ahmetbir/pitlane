@@ -106,6 +106,21 @@ func TestJumpStartPenalty(t *testing.T) {
 	}
 }
 
+// Revving on the brake through the lights (the launch hold) keeps the car on
+// its slot: no jump-start penalty, the engine at the launch rpm.
+func TestLaunchHoldIsNoJumpStart(t *testing.T) {
+	r := newRace(3)
+	a, _ := r.Seat("a", "")
+	r.Start(r.Creator())
+	for r.Phase() == Lights && r.Tick() < 200 {
+		r.Step(map[CarID]car.Input{a: {Throttle: 1, Brake: 1}})
+	}
+	c := r.car(a)
+	if r.Phase() != Lights || c.PenaltyMs != 0 || c.St.RPM < 8800 || c.St.Speed() != 0 {
+		t.Fatalf("phase %v penalty %d rpm %.0f speed %v", r.Phase(), c.PenaltyMs, c.St.RPM, c.St.Speed())
+	}
+}
+
 func TestGridIgnoresInput(t *testing.T) {
 	r := newRace(3)
 	a, _ := r.Seat("a", "")

@@ -304,6 +304,7 @@ func TestDerivedLiterals(t *testing.T) {
 	half, rho, area, m, g, a, b, l := 0.5, 1.225, 1.5, 798.0, 9.81, cgFront, cgRear, wheelbase
 	h, tw, sixty, two, pi, ed, first := cgHeight, trackW, 60.0, 2.0, math.Pi, 0.2, 3.0
 	first *= 5.39
+	launchRate := 8000.0
 	for _, c := range []struct {
 		name      string
 		lit, want float64
@@ -316,6 +317,7 @@ func TestDerivedLiterals(t *testing.T) {
 		{"rpmPerRad", rpmPerRad, sixty / (two * pi)},
 		{"envDragM", envDragM, ed * m},
 		{"first gear", gearTable[0][0], first},
+		{"launchUp", launchUp, launchRate / sixty},
 	} {
 		if math.Float64bits(c.lit) != math.Float64bits(c.want) {
 			t.Errorf("%s literal %v, run-time %v", c.name, c.lit, c.want)
@@ -707,5 +709,55 @@ func TestReverseWhileRollingForwardBrakes(t *testing.T) {
 	}
 	if held.VX != 0 || held.X != 0 || held.Gear != 1 {
 		t.Fatalf("brake at rest: VX %v X %v gear %d", held.VX, held.X, held.Gear)
+	}
+}
+
+// Brake and throttle together at rest: the brakes hold the car still and the
+// engine revs to the launch rpm (full throttle with the brake fully on is the
+// keyboard's launch hold).
+func TestLaunchHoldsTheCar(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		p := NewParams(h, DefaultSetup(), Damage{})
+		st := rest()
+		reached := -1
+		for i := range 60 * 3 {
+			Step(&st, &p, Input{Throttle: 1, Brake: 1, Steer: 0.4}, asphalt)
+			if reached < 0 && st.RPM >= 8800 {
+				reached = i + 1
+			}
+		}
+		moved := math.Hypot(st.X, st.Z)
+		t.Logf("%v: moved %.4f m in 3 s, rpm %.0f (8800 after %.2f s)", h, moved, st.RPM, float64(reached)*DT)
+		if moved >= 0.01 || st.RPM < 8800 || !st.Launch || st.VX != 0 || st.Gear != 1 {
+			t.Fatalf("%v: moved %.4f m, rpm %.0f, launch %v, VX %v, gear %d", h, moved, st.RPM, st.Launch, st.VX, st.Gear)
+		}
+		// Brake released: the clutch slips, the engine falling 100 rpm a step
+		// until it meets the wheels' rpm.
+		Step(&st, &p, Input{Throttle: 1}, asphalt)
+		if st.RPM != 8900 || !st.Launch {
+			t.Fatalf("%v: first slip step rpm %.0f launch %v", h, st.RPM, st.Launch)
+		}
+		for i := 1; i < 120 && st.Launch; i++ {
+			Step(&st, &p, Input{Throttle: 1}, asphalt)
+			if !st.Launch {
+				t.Logf("%v: clutch slip ends after %.2f s at %.1f m/s, %.0f rpm", h, float64(i+1)*DT, st.VX, st.RPM)
+			}
+		}
+		if st.Launch || st.RPM != max(st.VX*p.RPMPerMS[st.Gear-1], idleRPM) {
+			t.Fatalf("%v: slip did not end: rpm %.0f VX %.2f", h, st.RPM, st.VX)
+		}
+	}
+}
+
+// A launch is never slower than a standing start from idle, Sim with TC 2
+// and Arcade. (It is not quicker either: from rest the drive is capped by
+// traction, which the idle torque already exceeds about fivefold.)
+func TestLaunchNoSlowerThanIdleStart(t *testing.T) {
+	for _, h := range []Handling{Sim, Arcade} {
+		with, without := zeroTo(h, DefaultSetup(), 100/3.6, true), zeroTo(h, DefaultSetup(), 100/3.6, false)
+		t.Logf("%v: 0–100 km/h launch %.3f s, no launch %.3f s (gain %.3f s)", h, with, without, without-with)
+		if !(with <= without) {
+			t.Errorf("%v: 0–100 km/h launch %.3f s, no launch %.3f s", h, with, without)
+		}
 	}
 }

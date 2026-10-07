@@ -12,7 +12,7 @@ function carAt(s: number, lat: number, turn: number, vx: number): State {
   const [x, z] = tr.point(s, lat);
   const [x1, z1] = tr.point(s + 1, lat);
   const h = Math.atan2(z1 - z, x1 - x) + turn;
-  return { x, z, h, hx: Math.cos(h), hz: Math.sin(h), vx, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 5, ax: 0, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
+  return { x, z, h, hx: Math.cos(h), hz: Math.sin(h), vx, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 5, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 } };
 }
 
 test("a car inside the walls steps exactly as car.step on its surface", () => {

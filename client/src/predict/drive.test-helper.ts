@@ -45,7 +45,7 @@ export function startState(s: number, vx: number): State & { seg: number } {
   const [x, z] = track.point(s, 0);
   const [x1, z1] = track.point(s + 1, 0);
   const h = Math.atan2(z1 - z, x1 - x);
-  return { x, z, h, hx: Math.cos(h), hz: Math.sin(h), vx, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 4, ax: 0, dmg: { frontWing: 0, rearWing: 0, susp: 0 }, seg: track.locate(x, z, -1).i };
+  return { x, z, h, hx: Math.cos(h), hz: Math.sin(h), vx, vy: 0, r: 0, delta: 0, rpm: 4000, gear: 4, ax: 0, launch: false, dmg: { frontWing: 0, rearWing: 0, susp: 0 }, seg: track.locate(x, z, -1).i };
 }
 
 /** A driver that follows the centre line by its own (predicted) state. */
