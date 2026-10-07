@@ -121,7 +121,7 @@ export class RaceState {
   }
 
   private wrongWay(st: State): boolean {
-    if (Math.hypot(st.vx, st.vy) < WRONG_MIN_MS) return false;
+    if (st.gear === 0 || Math.hypot(st.vx, st.vy) < WRONG_MIN_MS) return false; // backing up in reverse is not wrong way
     const loc = this.track.locate(st.x, st.z, this.ownHint);
     this.ownHint = loc.i;
     const seg = this.track.segs[loc.i];

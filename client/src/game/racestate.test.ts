@@ -61,6 +61,8 @@ test("wrong way: driving against the track direction", () => {
   assert.equal(rs.hud(st).wrongWay, true);
   assert.equal(rs.hud({ ...st, hx: seg.tx, hz: seg.tz }).wrongWay, false);
   assert.equal(rs.hud({ ...st, vx: 2 }).wrongWay, false, "creeping: no warning");
+  assert.equal(rs.hud({ ...st, hx: seg.tx, hz: seg.tz, vx: -7, gear: 0 }).wrongWay, false, "backing up in reverse: no warning");
+  assert.equal(rs.hud({ ...st, hx: seg.tx, hz: seg.tz, vx: -7, gear: 1 }).wrongWay, true, "rolling backwards out of gear R still warns");
 });
 
 test("a reconnect into the same car keeps last, best and position; a new car starts over", () => {
